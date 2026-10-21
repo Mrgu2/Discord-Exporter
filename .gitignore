@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.venv/
+.DS_Store
+data/
+output/
+config.local.json
+.env
+*.log
+node_modules/
+artifacts/

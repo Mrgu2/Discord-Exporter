@@ -162,7 +162,8 @@
     let jobText = typeof currentJob === 'string' ? currentJob : first(currentJob?.message, currentJob?.detail, state.progress_message, runningRun?.message, runningRun?.progress, currentJob?.type && statusNames[currentJob.type]);
     if (typeof jobText === 'object') jobText = null;
     text('active-job-text', jobText || (pendingAction === 'draft' ? '正在生成稿件，完成后会出现在下方。' : state.queue_length ? `有 ${state.queue_length} 个任务正在等待处理。` : '正在处理任务，可以继续查看记录。'));
-    text('capture-hint', busy ? '任务在后台继续运行' : '内容保存在这台 Mac 上');
+    $('capture-hint').hidden = !busy;
+    text('capture-hint', busy ? '任务在后台继续运行' : '');
     renderChannels(allChannels);
     text('last-success', lastSuccess ? dateTime(lastSuccess, true) : '尚未保存');
     text('last-success-detail', lastSuccess ? `${relative(lastSuccess)} · ${displayTimezone()}` : '保存成功后在这里显示');
@@ -180,6 +181,7 @@
     const indicator = node('span', `status-dot${isOffline || needsAttention ? ' error' : !hasConnectionData ? ' pending' : ''}`);
     $('connection-state').replaceChildren(indicator, document.createTextNode(connectionLabel));
     text('connection-detail', connectingBrowser ? '请在打开的窗口中登录 Discord，完成后会自动识别。' : needsAttention ? '请在常开 Mac 上重新连接账号。' : isOffline ? `距上次成功保存 ${lastSuccess ? elapsed(lastSuccess) : '尚无记录'}，网络恢复后会自动重试。` : hasConnectionData || browserConnected ? '可以保存对话，也可以从已有内容生成稿件。' : discordCredential === false ? isLocal ? '首次会打开登录窗口，无需填写密钥。' : '请先在常开 Mac 上连接 Discord。' : '可以开始保存，保存成功后自动追踪更新。');
+    $('connection-detail').hidden = !(connectingBrowser || needsAttention || isOffline || discordCredential === false);
     $('connect-browser-button').disabled = busy || !isLocal;
     $('connect-browser-button').querySelector('span').textContent = !isLocal ? '请在 Mac 上连接' : connectingBrowser ? '正在连接…' : discordCredential ? '重新连接 Discord' : '连接 Discord';
     const offlineSince = first(connectivity.offline_since, state.offline_since);
@@ -350,7 +352,7 @@
     if (scopeName) meta.append(node('span', '', `${scopeName}${draft.date ? ` ${draft.date}` : ''}`));
     const messageCount = first(draft.message_count, draft.source_count, draft.messages_count);
     if (messageCount !== undefined) meta.append(node('span', '', `${number(messageCount)} 条消息`));
-    if (draft.mode) meta.append(node('span', '', draft.mode === 'model' ? '模型整理' : '本地证据稿'));
+    if (draft.mode === 'model') meta.append(node('span', '', '模型整理'));
     if (draft.layout) meta.append(node('span', '', { collage: '自动拼版', board: '四栏拼版', qa: '问答页' }[draft.layout] || draft.layout));
     if (Array.isArray(draft.warnings) && draft.warnings.length) meta.append(node('span', 'draft-state', `${draft.warnings.length} 项待核对`));
     if (draft.error) meta.append(node('span', 'draft-state failed', typeof draft.error === 'string' ? draft.error : draft.error.message || '生成失败'));
@@ -387,7 +389,7 @@
     const recent = drafts.slice(0, 3);
     $('recent-drafts').replaceChildren(...(recent.length ? recent.map(draftRow) : [emptyState('还没有稿件', '先保存一轮对话，再选择范围生成。')]));
     const matches = drafts.filter((draft) => String(first(draft.title, draft.name, '')).toLocaleLowerCase().includes(draftSearch.toLocaleLowerCase()));
-    $('all-drafts').replaceChildren(...(matches.length ? matches.map(draftRow) : [emptyState(draftSearch ? '没有找到匹配的稿件' : '还没有稿件', draftSearch ? '试试其他关键词。' : '在“采集与整理”中生成第一份稿件。')]));
+    $('all-drafts').replaceChildren(...(matches.length ? matches.map(draftRow) : [emptyState(draftSearch ? '没有找到匹配的稿件' : '还没有稿件', draftSearch ? '试试其他关键词。' : '在“工作台”保存对话，再生成第一份稿件。')]));
   }
   function emptyState(title, detail) { const wrapper = node('div', 'empty-state'); wrapper.append(node('span', '', title), node('small', '', detail)); return wrapper; }
   function renderRuns(runs) {
@@ -518,13 +520,13 @@
     $('draft-date').required = scope === 'day';
     $('draft-start').required = scope === 'range';
     $('draft-end').required = scope === 'range';
-    text('scope-description', { latest: '整理最近一次成功保存中的群主发言，并补齐本地已有的回复上下文。', day: '合并这个交易日的多次存档，保留群主后续补充与说法变更。', range: '合并选定日期内的存档，适合整理数日答疑或每周汇总。' }[scope]);
+    text('scope-description', { latest: '整理本轮新增或修改的群主发言，按回复关系补齐原问题与旧回答。', day: '合并这个交易日的多次存档，保留群主后续补充与说法变更。', range: '合并选定日期内的存档，适合整理数日答疑或每周汇总。' }[scope]);
     updateDraftOptionsLabel();
   }
   async function createDraft(event) {
     event.preventDefault();
     const scope = document.querySelector('input[name="scope"]:checked').value;
-    const body = { scope, mode: $('draft-mode').value, format: 'both', layout: $('draft-layout').value };
+    const body = { scope, mode: $('draft-mode').value, format: 'both', layout: $('draft-layout').value, presentation: $('draft-presentation')?.value || 'reading' };
     if (body.mode === 'model' && !publicConfig.model?.base_url) { showToast('请先在设置中配置模型服务，或选择本地证据稿。', true); return; }
     if ($('draft-title').value.trim()) body.title = $('draft-title').value.trim();
     if (scope === 'day') body.date = $('draft-date').value;

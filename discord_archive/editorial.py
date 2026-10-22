@@ -13,6 +13,9 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from .context import build_context
+from .assets import forwarded_texts, iter_message_assets
+from .media import MediaArchive
+from .readability import choose_reading_groups, clean_reading_text
 from .scheduler import day_bounds, market_day
 from .settings import atomic_json
 from .store import iso_time, parse_time
@@ -107,6 +110,9 @@ class DraftService:
 
     def generate(self, request):
         config = self.settings.read()
+        presentation = request.get("presentation", "reading")
+        if presentation not in {"reading", "full"}:
+            raise ValueError("请选择精简阅读或完整原文")
         mode = request.get("mode","evidence")
         layout = request.get("layout","collage")
         if layout not in {"qa","board","collage"}:
@@ -124,6 +130,8 @@ class DraftService:
             since=selection["since"],until=selection["until"]) for channel in selection["channels"]]
         items = [item for bundle in bundles for item in bundle["items"]]
         if not items:
+            if selection["scope"] == "latest":
+                raise ValueError("最近一轮没有新增或编辑的群主发言；可选择整个交易日查看已保存内容。")
             raise ValueError("所选范围没有已保存的群主发言，请调整范围或先保存一轮")
         groups = self._group(items)
         panels = []
@@ -136,28 +144,56 @@ class DraftService:
                     "kind":kind,"groups":panel_groups,"messages":bundle["seeds"]})
         warnings = list(dict.fromkeys(warning for bundle in bundles for warning in bundle["warnings"]))
         all_groups = [group for panel in panels for group in panel["groups"]] if layout != "qa" else groups
-        if any(self._media(message,attachment).get("status") != "saved" for group in all_groups for message in group["messages"] for attachment in message.get("attachments",[])):
+        media_archive = getattr(self, 'media', None) or MediaArchive(self.root)
+        source_messages = {_key(message): message for group in all_groups for message in group['messages']}
+        for channel in selection['channels']:
+            media_archive.archive_page(channel, None, [message for message in source_messages.values() if message['channel_id'] == channel])
+        if any(self._media(message,attachment).get("status") != "saved" for message in source_messages.values() for attachment in iter_message_assets(message)):
             warnings.append("部分附件未保存在本地，离线阅读前请核对下载结果。")
         for channel in selection["channels"]:
             if self.store.channel_status(channel)["coverage_gaps"]:
                 warnings.append("归档存在可能的留存缺口，当前稿件只覆盖实际保存到的内容。")
                 break
         title = str(request.get("title") or selection["label"]).strip()[:150]
+        source_groups, source_panels = all_groups, panels
+        decisions = []
+        if presentation == 'reading':
+            if layout == 'qa':
+                all_groups, decisions = choose_reading_groups(all_groups, author)
+            else:
+                visible_panels = []
+                for panel in panels:
+                    visible_groups, omitted = choose_reading_groups(panel['groups'], author)
+                    decisions.extend(omitted)
+                    if visible_groups or layout == 'board':
+                        answers = {_key(message): message for group in visible_groups for message in group['answers']}
+                        visible_panels.append({**panel, 'groups': visible_groups, 'messages': list(answers.values())})
+                panels = visible_panels
+                all_groups = [group for panel in panels for group in panel['groups']]
+            if not all_groups:
+                raise ValueError('这个范围只有闲聊或简短回应，可切换“完整原文”查看。')
+        visible_answers = {_key(message) for group in all_groups for message in group['answers']}
         identity = str(uuid.uuid4())
         folder = self.output/identity
         folder.mkdir(mode=0o700)
         now = iso_time()
         metadata = {"id":identity,"title":title,"status":"ready","created_at":now,
             "path":str(folder/"index.html"),"url":f"/output/{identity}/index.html",
-            "scope":selection["scope"],"mode":mode,"message_count":len(items),
+            "scope":selection["scope"],"mode":mode,"message_count":len(visible_answers),
+            "presentation":presentation,"source_message_count":len(items),"omitted_message_count":len(decisions),
             "topic_count":len(all_groups),"warnings":warnings,"images":[],"selection":selection,
             "layout":layout,"single_columns":[],
             "manuscript_url":f"/output/{identity}/manuscript.md","evidence_url":f"/output/{identity}/evidence.json",
+            "archive_url":f"/output/{identity}/archive.html","archive_manuscript_url":f"/output/{identity}/archive.md",
             "date":request.get("date"),"market_timezone":config.get("market_timezone","America/New_York")}
         evidence = {"schema_version":1,"title":title,"created_at":now,"selection":selection,
-            "target_author_id":author,"warnings":warnings,"groups":all_groups,"contexts":items,"panels":panels,"layout":layout}
+            "target_author_id":author,"warnings":warnings,"groups":source_groups,"contexts":items,"panels":source_panels,"layout":layout,
+            "reading":{"decisions":decisions,"visible_panels":panels,"visible_groups":all_groups}}
         atomic_json(folder/"evidence.json",evidence)
         manuscript,document = self._documents(metadata,all_groups,config)
+        archive_md, archive_html = self._documents({**metadata, 'presentation':'full', 'message_count':len(items)},source_groups,config)
+        (folder/'archive.md').write_text(archive_md,encoding='utf-8')
+        (folder/'archive.html').write_text(archive_html,encoding='utf-8')
         if layout in {"collage","board"}:
             document = self._panel_document(document,metadata,panels,config)
             for panel in panels:
@@ -199,9 +235,8 @@ class DraftService:
             panel_html.append(f'<section class="content-panel" data-channel="{html.escape(panel["channel_id"])}" data-kind="{html.escape(panel["kind"])}"><h2 class="category-title">{html.escape(panel["title"])}</h2>{content}</section>')
         wrapper = f'<div class="panel-grid" data-layout="{metadata["layout"]}">'+"".join(panel_html)+"</div>"
         document = re.sub(r'(</header>).*?(<nav class="download-links">)',lambda match:match.group(1)+wrapper+match.group(2),document,count=1,flags=re.S)
-        document = document.replace('<body>',f'<body data-layout="{metadata["layout"]}">')
-        style = '''.panel-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:40px;align-items:start}.content-panel{min-width:0}.category-title{font-size:34px;border-bottom:3px solid #303945;padding-bottom:20px;margin-bottom:30px}.content-panel .topic>h2{font-size:27px}.source-image{display:block;max-width:100%;width:auto;height:auto;object-fit:contain;object-position:left top;margin:20px 0}.panel-grid[data-layout="board"]{grid-template-columns:repeat(4,minmax(0,1fr))}body[data-layout="board"] main{width:3200px}body[data-layout="collage"] main{width:2400px}.composition-page{max-width:none}.composition-lanes{display:grid;gap:36px;align-items:start}.composition-lane{min-width:0;align-self:start}.composition-page .source-image{max-height:2600px}.composition-page .category-title{margin-top:0}.composition-page .topic>h2{font-size:27px}.composition-page .content-panel{margin-bottom:32px}.composition-page .topic{border-bottom:1px solid #d9dde0;padding-bottom:20px;margin-bottom:24px}@media(max-width:900px){.panel-grid,.panel-grid[data-layout="board"]{grid-template-columns:1fr}body[data-layout] main{width:100%}}'''
-        return document.replace('</style>',style+'</style>')
+        document = re.sub(r'<body(?=[ >])',f'<body data-layout="{metadata["layout"]}"',document,count=1)
+        return document
 
     def _group(self, items):
         by_seed = {_key(item["seed"]):item for item in items}
@@ -269,10 +304,15 @@ class DraftService:
     def _documents(self, metadata, groups, config):
         zone = ZoneInfo(config.get("market_timezone","America/New_York"))
         title = metadata["title"]
-        period = f'{len(groups)} 个条目 · {metadata["message_count"]} 条群主发言 · {zone.key}'
-        markdown = [f"# {title}","",period,"","原文按回复关系归并，保留时间、条件与本地证据 ID。"," "]
+        reading = metadata.get('presentation') == 'reading'
+        zone_name = '纽约时间' if zone.key == 'America/New_York' else '市场当地时间'
+        period = f'{metadata["message_count"]} 条发言 · {zone_name}'
+        markdown = [f"# {title}","",period,""]
         articles = []
         def block(label,content,message=None,extra_class=""):
+            if reading:
+                content = clean_reading_text(content, config.get('target_author_id'))
+                label = {'原问题 / 回复背景':'问','此前群主发言':'此前回答','群主原话':'答','群主补充':'补充','追问 / 后续对话':'追问'}.get(label,label)
             meta = ""
             render_meta = ""
             if message:
@@ -283,40 +323,52 @@ class DraftService:
                 if message.get("is_reference_snapshot"):
                     meta += " · 引用快照"
                     render_meta += " · 引用快照"
-            markdown.extend([f"**{label}**"+(f"　{meta}" if meta else ""),"",content or "（无文字内容）",""])
+            if reading:
+                meta = render_meta = ''
+                if not content and extra_class != 'attachment':
+                    return ''
+            if label or content:
+                markdown.extend(([f"**{label}**"+(f"　{meta}" if meta else ""),""] if label else [])+[content or "（无文字内容）",""])
             evidence_attr = f' data-evidence-id="{html.escape(_local_id(message),quote=True)}"' if message else ""
-            return f'<section class="block {extra_class}" data-segment{evidence_attr}><div class="block-label">{html.escape(label)}</div>' + (f'<div class="source-meta" data-render-meta="{html.escape(render_meta,quote=True)}">{html.escape(meta)}</div>' if meta else "") + f'<p class="message-text">{html.escape(content or "（无文字内容）")}</p></section>'
+            body = html.escape(content or ('' if reading else '（无文字内容）'))
+            if reading:
+                body = re.sub(r'\*\*(.+?)\*\*',r'<strong>\1</strong>',body,flags=re.S)
+            return f'<section class="block {extra_class}" data-segment{evidence_attr}>'+(f'<div class="block-label">{html.escape(label)}</div>' if label else '') + (f'<div class="source-meta" data-render-meta="{html.escape(render_meta,quote=True)}">{html.escape(meta)}</div>' if meta else "") + (f'<p class="message-text">{body}</p>' if body else '')+'</section>'
         for index,group in enumerate(groups,1):
-            heading = f'{index:02d}　{group["title"]}'
-            markdown.extend([f"## {heading}",""])
+            heading = f'{index:02d} · {_time(group["answers"][0],zone).split()[-1]}' if reading else f'{index:02d}　{group["title"]}'
+            if not reading:
+                markdown.extend([f"## {heading}",""])
             parts = []
-            if group["continuous_only"]:
-                parts.append(block("阅读提示","以下为连续发言归并；时间邻接不等于已确认属于同一问题。",extra_class="note"))
             for message in group["context"]:
                 parts.append(block("原问题 / 回复背景" if message["author_id"] != group["answers"][0]["author_id"] else "此前群主发言",message["content"],message))
             for missing in group["missing_context"]:
-                parts.append(block("上下文缺失",f'原消息 {missing["channel_id"]}/{missing["message_id"]} 未保存，无法核实原问题。',extra_class="note"))
+                text = '原问题未保存。' if reading else f'原消息 {missing["channel_id"]}/{missing["message_id"]} 未保存，无法核实原问题。'
+                parts.append(block("上下文缺失",text,extra_class="note"))
             for answer_index,message in enumerate(group["answers"]):
                 parts.append(block("群主原话" if answer_index == 0 else "群主补充",message["content"],message,extra_class="answer"))
             for message in group["followups"]:
                 parts.append(block("追问 / 后续对话",message["content"],message))
             for version in group["version_history"]:
                 parts.append(block("编辑前已保存版本",version["content"],version["message"],extra_class="note"))
-            attachments = [(message,attachment) for message in group["messages"] for attachment in message.get("attachments",[])]
+            for message in group['messages']:
+                for forwarded in forwarded_texts(message):
+                    parts.append(block('转发内容',forwarded,message))
+            attachments = [(message,attachment) for message in group["messages"] for attachment in iter_message_assets(message)]
             for message,attachment in attachments:
                 filename = attachment.get("filename") or attachment.get("fileName") or "附件"
                 link = attachment.get("url") or attachment.get("proxy_url") or attachment.get("proxyUrl") or "未保存链接"
                 media = self._media(message,attachment)
                 if media["status"] == "saved":
-                    attachment_html = block("原图 / 附件",f"{filename}\n已保存本地副本。",message,extra_class="attachment")
-                    if re.search(r'\.(?:png|jpe?g|gif|webp|avif|bmp)$',media.get("file",""),re.I):
+                    attachment_html = block('' if reading else "原图 / 附件",'' if reading else f"{filename}\n已保存本地副本。",message,extra_class="attachment")
+                    if attachment.get('is_image'):
                         image_html = f'<img class="source-image" src="{html.escape(media["url"],quote=True)}" data-local-src="{html.escape(media["local_src"],quote=True)}" alt="{html.escape(filename,quote=True)}">'
                         attachment_html = attachment_html.replace('</section>',image_html+'</section>')
                     else:
                         attachment_html = attachment_html.replace('</section>',f'<a href="{html.escape(media["url"],quote=True)}">下载本地附件</a></section>')
                     parts.append(attachment_html)
                 else:
-                    parts.append(block("附件记录",f"{filename}\n{link}\n本地副本未保存（{media['status']}）。",message,extra_class="attachment"))
+                    description = '图片尚未保存。' if reading and attachment.get('is_image') else f"{filename}\n{link}\n本地副本未保存（{media['status']}）。"
+                    parts.append(block("附件记录",description,message,extra_class="attachment"))
             articles.append(f'<article class="topic"><h2>{html.escape(heading)}</h2>'+"".join(parts)+"</article>")
         warning_html = ""
         if metadata["warnings"]:
@@ -325,9 +377,9 @@ class DraftService:
             markdown.extend([warnings,""])
             warning_html = '<article class="topic"><h2>归档提示</h2>'+block("核对范围",warnings,extra_class="note")+"</article>"
         document = f'''<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{html.escape(title)}</title><style>
-*{{box-sizing:border-box}}body{{margin:0;background:#f4f3ef;color:#22252a;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif}}main{{width:1080px;max-width:100%;margin:0 auto;background:white;padding:64px}}header{{padding-bottom:36px;border-bottom:2px solid #252b32;margin-bottom:40px}}h1{{font-size:44px;line-height:1.35;letter-spacing:-1px;margin:0 0 18px;font-weight:650}}.document-meta{{font-size:21px;line-height:1.6;color:#686e77}}.intro{{font-size:23px;line-height:1.6;margin:24px 0 0;color:#555d67}}.topic{{padding:0 0 35px;margin:0 0 38px;border-bottom:1px solid #d9dde0}}h2{{font-size:31px;line-height:1.5;font-weight:650;margin:0 0 25px;overflow-wrap:anywhere}}.block{{margin:0 0 28px;break-inside:avoid}}.block-label{{font-size:22px;font-weight:650;color:#3e4855;margin-bottom:8px}}.source-meta{{font-size:17px;color:#7a818b;line-height:1.65;overflow-wrap:anywhere;margin-bottom:10px}}.message-text{{font-size:27px;line-height:1.75;white-space:pre-wrap;overflow-wrap:anywhere;margin:0}}.note .message-text,.attachment .message-text{{font-size:23px;color:#626a76}}.answer{{padding-left:22px;border-left:3px solid #c8d0d8}}.download-links{{display:flex;gap:22px;font-size:18px;margin-top:38px}}a{{color:#374b63;text-underline-offset:4px}}.page-heading{{font-size:25px;font-weight:650;line-height:1.4;margin-bottom:8px}}.page-subtitle{{font-size:16px;color:#7a818b;margin-bottom:34px}}.render-page{{width:1080px;background:white;padding:56px 60px 40px;margin:0 0 24px;overflow:hidden}}.page-footer{{font-size:16px;color:#7a818b;border-top:1px solid #d9dde0;padding-top:17px;margin-top:26px;display:flex;justify-content:space-between}}.render-page .topic{{margin-bottom:12px;padding-bottom:8px;border-bottom:0}}.render-page .block:last-child{{margin-bottom:0}}@media(max-width:700px){{main{{padding:30px 22px}}h1{{font-size:29px}}h2{{font-size:24px}}.message-text{{font-size:19px}}.block-label{{font-size:18px}}.source-meta{{font-size:13px}}.document-meta,.intro{{font-size:16px}}.note .message-text,.attachment .message-text{{font-size:17px}}.download-links{{font-size:15px;flex-wrap:wrap}}}}
-</style></head><body><main id="manuscript"><header><h1>{html.escape(title)}</h1><div class="document-meta">{html.escape(period)}</div><p class="intro">原文按回复关系归并，保留时间、条件与本地证据 ID。</p></header>{"".join(articles)}{warning_html}<nav class="download-links"><a href="manuscript.md" download>下载文字稿</a><a href="evidence.json" download>查看本地证据</a></nav></main></body></html>'''
-        document = document.replace('</style>','.source-image{display:block;max-width:100%;width:auto;height:auto;max-height:2600px;object-fit:contain;object-position:left top;margin:20px 0}</style>')
+{(Path(__file__).resolve().parent.parent/"web"/"manuscript.css").read_text(encoding="utf-8")}
+{(Path(__file__).resolve().parent.parent/"web"/"reading.css").read_text(encoding="utf-8") if reading else ''}
+</style></head><body data-presentation="{'reading' if reading else 'full'}"><main id="manuscript"><header><h1>{html.escape(title)}</h1><div class="document-meta">{html.escape(period)}</div></header>{"".join(articles)}{warning_html}<nav class="download-links"><a href="manuscript.md" download>下载文字稿</a><a href="archive.html">完整原文</a><a href="evidence.json" download>查看出处</a></nav></main></body></html>'''
         return "\n".join(markdown),document
 
     def _folder(self, draft_id):
@@ -362,6 +414,7 @@ class DraftService:
                 raise ValueError(safe_error[:500])
             return json.loads(result.stdout)
         rendered = render_file(folder/"index.html",folder)
+        verification_keys=('source_coverage','image_coverage','text_coverage','reading_order','topic_integrity','body_font_sizes','blank_ratio')
         identity = folder.name
         images = [f"/output/{identity}/{Path(path).name}" for path in rendered["images"]]
         metadata = json.loads((folder/"metadata.json").read_text(encoding="utf-8"))
@@ -369,8 +422,11 @@ class DraftService:
             subfolder = folder/f'mobile-{column["channel_id"]}'
             single = render_file(folder/column["file"],subfolder)
             column["images"] = [f'/output/{identity}/{subfolder.name}/{Path(path).name}' for path in single["images"]]
+            column['image_coverage'] = single.get('image_coverage')
+            column['render_verification'] = {key:single.get(key) for key in verification_keys}
         metadata.update(images=images,rendered_at=iso_time(),image_url=images[0] if images else None,
-            layout_mode=rendered.get("layout_mode"),image_dimensions=rendered.get("dimensions",[]))
+            layout_mode=rendered.get("layout_mode"),image_dimensions=rendered.get("dimensions",[]),image_coverage=rendered.get('image_coverage'),
+            render_verification={key:rendered.get(key) for key in verification_keys})
         atomic_json(folder/"metadata.json",metadata)
         return {"images":images,"dimensions":rendered.get("dimensions",[]),"layout_mode":rendered.get("layout_mode"),
             "panel_heights":rendered.get("panel_heights",[]),"single_columns":metadata.get("single_columns",[]),"draft":metadata}

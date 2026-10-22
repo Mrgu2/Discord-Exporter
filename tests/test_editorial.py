@@ -54,7 +54,7 @@ class EditorialTests(unittest.TestCase):
         self.assertIn("在什么条件下？",manuscript)
         self.assertIn("等待确认后再考虑。",manuscript)
         self.assertIn("还有成交量条件。",manuscript)
-        self.assertIn("100/2",manuscript)
+        self.assertIn("100/2",(folder/"archive.md").read_text())
         self.assertEqual(draft["topic_count"],1)
         self.assertEqual(draft["message_count"],2)
         self.assertEqual(self.service.list_drafts()[0]["id"],draft["id"])
@@ -66,7 +66,7 @@ class EditorialTests(unittest.TestCase):
         draft = self.service.generate({"scope":"latest"})
         text = (Path(draft["path"]).parent/"manuscript.md").read_text()
         self.assertIn("上下文缺失",text)
-        self.assertIn("100/999",text)
+        self.assertIn("100/999",(Path(draft["path"]).parent/"archive.md").read_text())
         self.assertNotIn("邻近但无关的问题",text)
 
     def test_short_unlinked_acknowledgements_form_one_section(self):
@@ -74,9 +74,38 @@ class EditorialTests(unittest.TestCase):
         for index in range(5):
             messages.extend([message(index*2+1,"其他人的发言",author="member"),message(index*2+2,"对")])
         self.save(messages)
-        draft = self.service.generate({"scope":"latest"})
+        draft = self.service.generate({"scope":"latest","presentation":"full"})
         self.assertEqual(draft["topic_count"],1)
         self.assertEqual(draft["message_count"],5)
+
+    def test_reading_copy_removes_noise_and_hint_but_keeps_full_archive(self):
+        self.save([message(1,'VIX尾盘再看吗？',author='member'),
+            message(2,'是的',message_reference={'message_id':'1'}),
+            message(3,'谢谢老大',author='member',message_reference={'message_id':'2'}),
+            message(4,'我去喝咖啡了')])
+        draft=self.service.generate({'scope':'latest','layout':'qa'})
+        folder=Path(draft['path']).parent
+        document=Path(draft['path']).read_text();manuscript=(folder/'manuscript.md').read_text()
+        self.assertEqual(document.count('VIX尾盘再看吗？'),1)
+        self.assertIn('是的',manuscript)
+        self.assertNotIn('谢谢老大',manuscript)
+        self.assertNotIn('我去喝咖啡了',manuscript)
+        self.assertNotIn('阅读提示',document)
+        self.assertNotIn('时间邻接',document)
+        self.assertNotIn('本地证据',document)
+        self.assertIn('我去喝咖啡了',(folder/'archive.md').read_text())
+        self.assertEqual(draft['message_count'],1)
+
+    def test_forwarded_text_and_image_are_not_empty_content(self):
+        media=self.root/'data'/'media';media.mkdir(parents=True)
+        (media/'forward.png').write_bytes(b'fixture')
+        (media/'manifest.json').write_text(json.dumps({'100/2/snapshot-0-9':{'status':'saved','file':'forward.png'}}))
+        self.save([message(2,'',message_snapshots=[{'message':{'content':'转发的市场信息','attachments':[{'id':'9','filename':'chart.png','content_type':'image/png','url':'https://cdn.discordapp.com/attachments/1/9/chart.png'}]}}])])
+        draft=self.service.generate({'scope':'latest','layout':'qa'})
+        document=Path(draft['path']).read_text()
+        self.assertIn('转发的市场信息',document)
+        self.assertIn('src="/media/forward.png"',document)
+        self.assertNotIn('无文字内容',document)
 
     def test_trade_day_includes_next_early_morning_but_excludes_boundary(self):
         self.save([message(1,"开盘",timestamp="2026-10-21T14:00:00Z"),
@@ -138,6 +167,29 @@ class EditorialTests(unittest.TestCase):
         self.assertIn('data-local-src="../../data/media/sample.png"',document)
         self.assertIn("100/2",document)
         self.assertNotIn("部分附件未保存在本地",draft["warnings"])
+
+    def test_latest_is_incremental_while_trade_day_keeps_all_target_messages(self):
+        question = message(1,"原问题",author="member")
+        morning = message(2,"上午条件",message_reference={"message_id":"1"})
+        unrelated = message(3,"上午另一条未变化发言")
+        self.save([question,morning,unrelated])
+        first = self.service.generate({"scope":"latest","layout":"qa"})
+        self.assertEqual(first["message_count"],2)
+        closing = message(4,"尾盘补充",timestamp="2026-10-21T20:00:00Z",message_reference={"message_id":"2"})
+        self.save([question,morning,unrelated,closing])
+        latest = self.service.generate({"scope":"latest","layout":"qa"})
+        text = (Path(latest["path"]).parent/"manuscript.md").read_text()
+        self.assertEqual(latest["message_count"],1)
+        self.assertIn("原问题",text)
+        self.assertIn("上午条件",text)
+        self.assertIn("此前回答",text)
+        self.assertIn("尾盘补充",text)
+        self.assertNotIn("上午另一条未变化发言",text)
+        day = self.service.generate({"scope":"day","date":"2026-10-21","layout":"qa"})
+        self.assertEqual(day["message_count"],3)
+        self.save([question,morning,unrelated,closing])
+        with self.assertRaisesRegex(ValueError,"没有新增或编辑"):
+            self.service.generate({"scope":"latest"})
 
 
 if __name__ == "__main__":

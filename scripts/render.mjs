@@ -34,6 +34,9 @@ async function main() {
     const page = await browser.newPage({viewport:{width:3200,height:MAX_HEIGHT},deviceScaleFactor:1});
     await page.route('**/*', route => /^(file:|data:)/.test(route.request().url()) ? route.continue() : route.abort());
     await page.goto(pathToFileURL(input).href, {waitUntil:'load'});
+    // Apply the current export design to new and previously saved manuscripts,
+    // without rewriting their source HTML, Markdown or evidence files.
+    await page.addStyleTag({content: fs.readFileSync(new URL('../web/manuscript.css', import.meta.url), 'utf8')});
     await page.evaluate(async () => {
       for(const image of document.querySelectorAll('img[data-local-src]')) image.src=new URL(image.dataset.localSrc,location.href).href;
       await Promise.all([...document.images].map(image=>image.complete ? Promise.resolve() : new Promise(resolve=>{image.onload=resolve;image.onerror=resolve;})));
@@ -57,6 +60,8 @@ async function main() {
       const subtitle = original.querySelector('.document-meta')?.textContent || '';
       const sourcePanels = [...original.querySelectorAll('.panel-grid > .content-panel')];
       if(sourcePanels.length) {
+        let topicOrder=0;
+        for(const panel of sourcePanels)for(const topic of panel.querySelectorAll(':scope > .topic'))topic.dataset.topicOrder=String(topicOrder++);
         const measurement=document.createElement('div');
         measurement.style.cssText='position:absolute;left:-10000px;top:0;width:1080px;visibility:hidden';
         document.body.append(measurement);
@@ -80,8 +85,9 @@ async function main() {
         const holder=document.createElement('div');holder.id='render-pages';document.body.append(holder);original.style.display='none';
         const titleFor=panel=>sourcePanels[panel].querySelector(':scope > .category-title').textContent;
         const panelEntries=panel=>[...sourcePanels[panel].querySelectorAll(':scope > .topic')].map(element=>({panel,element:element.cloneNode(true)}));
-        const candidates=[{mode,width,queues:assignments.map(indices=>indices.flatMap(panelEntries))}];
-        if(!board && sourcePanels.length>1 && sourcePanels[descending[0].index].querySelectorAll(':scope > .topic').length>1) {
+        const ordered=document.body.dataset.presentation==='reading' && !board && sourcePanels.length>1;
+        const candidates=ordered?[{mode:'ordered-two',width:2160,queues:[sourcePanels.flatMap((_,index)=>panelEntries(index))]}]:[{mode,width,queues:assignments.map(indices=>indices.flatMap(panelEntries))}];
+        if(!ordered && !board && sourcePanels.length>1 && sourcePanels[descending[0].index].querySelectorAll(':scope > .topic').length>1) {
           // Measure complete question/answer topics at their real output width.
           // A large panel may occupy both lanes; short panels stay consecutive
           // in one lane rather than leaving an almost empty sidebar.
@@ -111,7 +117,10 @@ async function main() {
         }
         function renderCandidate(candidate) {
         const {mode,width}=candidate;
-        const queues=candidate.queues.map(queue=>queue.map(entry=>({panel:entry.panel,element:entry.element.cloneNode(true)})));
+        const copied=candidate.queues.map(queue=>queue.map(entry=>({panel:entry.panel,element:entry.element.cloneNode(true)})));
+        // Read down the left lane, then the right lane, then the next page.
+        // Both lanes consume one queue so shorter topics cannot jump ahead.
+        const queues=mode==='ordered-two'?[copied[0],copied[0]]:copied;
         const pages=[],seenPanels=new Set();
         function createPage(){
           const container=document.createElement('div');container.className='render-page composition-page';container.style.width=width+'px';
@@ -135,6 +144,7 @@ async function main() {
               const entry=queue[0];
               if(entry.panel!==panelIdentity){
                 panelSection=document.createElement('section');panelSection.className='content-panel';
+                panelSection.dataset.panelIndex=String(entry.panel);
                 const h2=document.createElement('h2');h2.className='category-title';h2.textContent=titleFor(entry.panel)+(seenPanels.has(entry.panel)?'（续）':'');
                 panelSection.append(h2);lane.append(panelSection);panelIdentity=entry.panel;
               }
@@ -182,6 +192,39 @@ async function main() {
           if(!progress)throw new Error('内容无法放入页面。');
           if(Math.ceil(container.getBoundingClientRect().height)>MAX_HEIGHT)throw new Error('拼版高度超出限制。');
         }
+        if(mode==='ordered-two') {
+          // Balance each page by moving complete consecutive topics;
+          // never shrink text, stretch an image, or shuffle the reading order.
+          for(const [pageIndex,last] of pages.entries()) {
+          const lanes=[...last.querySelectorAll('.composition-lane')];
+          const entries=lanes.flatMap(lane=>[...lane.querySelectorAll('.topic')].map(element=>({panel:Number(element.closest('.content-panel').dataset.panelIndex),element:element.cloneNode(true)})));
+          const earlier=new Set(pages.slice(0,pageIndex).flatMap(element=>[...element.querySelectorAll('[data-panel-index]')].map(section=>Number(section.dataset.panelIndex))));
+          const available=MAX_HEIGHT-(last.getBoundingClientRect().height-last.querySelector('.composition-lanes').getBoundingClientRect().height);
+          const populate=split=>{
+            const placed=new Set(earlier);
+            lanes.forEach((lane,index)=>{
+              lane.replaceChildren();let section,identity;
+              for(const entry of (index===0?entries.slice(0,split):entries.slice(split))) {
+                if(identity!==entry.panel) {
+                  section=document.createElement('section');section.className='content-panel';section.dataset.panelIndex=String(entry.panel);
+                  const heading=document.createElement('h2');heading.className='category-title';heading.textContent=titleFor(entry.panel)+(placed.has(entry.panel)?'（续）':'');
+                  section.append(heading);lane.append(section);identity=entry.panel;
+                }
+                section.append(entry.element.cloneNode(true));placed.add(entry.panel);
+              }
+            });
+            return Math.max(...lanes.map(lane=>Math.ceil(lane.getBoundingClientRect().height)));
+          };
+          if(entries.length>1) {
+            let split=lanes[0].querySelectorAll('.topic').length,best=populate(split);
+            for(let point=1;point<entries.length;point++) {
+              const height=populate(point);
+              if(height<=Math.floor(available) && height<best){best=height;split=point;}
+            }
+            populate(split);
+          }
+          }
+        }
         pages.forEach((element,index)=>element.querySelector('.page-number').textContent=`${String(index+1).padStart(2,'0')} / ${String(pages.length).padStart(2,'0')}`);
         let usedArea=0,totalArea=0;
         const laneHeights=pages.map(element=>{
@@ -212,6 +255,7 @@ async function main() {
           layout_candidates:choices.map(choice=>({mode:choice.mode,page_count:choice.pages.length,blank_ratio:choice.blank_ratio,lane_heights:choice.lane_heights}))};
       }
       const topics = [...original.querySelectorAll(':scope > .topic')];
+      topics.forEach((topic,index)=>topic.dataset.topicOrder=String(index));
       const holder = document.createElement('div');
       holder.id = 'render-pages';
       document.body.append(holder);
@@ -237,11 +281,19 @@ async function main() {
       const hasContent = () => body.querySelector('[data-segment]') !== null;
       newPage();
       for (const originalTopic of topics) {
+        const priorContent=hasContent(),probe=originalTopic.cloneNode(true);
+        body.append(probe);
+        const fitsCurrent=height()<=MAX_HEIGHT;
+        const available=MAX_HEIGHT-(current.getBoundingClientRect().height-body.getBoundingClientRect().height);
+        const topicHeight=probe.getBoundingClientRect().height;
+        probe.remove();
+        if(priorContent && !fitsCurrent && topicHeight<=available)newPage();
         const heading = originalTopic.querySelector('h2').textContent;
         const queue = [...originalTopic.querySelectorAll(':scope > [data-segment]')].map(element => element.cloneNode(true));
         let placed = false, topic;
         function topicOnPage() {
           topic = document.createElement('article'); topic.className='topic';
+          topic.dataset.topicOrder=originalTopic.dataset.topicOrder;
           const h2 = document.createElement('h2'); h2.textContent=heading+(placed ? '（续）' : '');
           topic.append(h2);body.append(topic);
         }
@@ -287,6 +339,10 @@ async function main() {
     const verification=await page.evaluate(async()=>{
       const images=[...document.querySelectorAll('#render-pages img')];
       await Promise.all(images.map(image=>image.complete?Promise.resolve():new Promise(resolve=>{image.onload=resolve;image.onerror=resolve;})));
+      const expectedImages=new Set([...document.querySelectorAll('#manuscript img')].map(image=>image.src));
+      const renderedImages=new Set(images.map(image=>image.src));
+      const missingImages=[...expectedImages].filter(source=>!renderedImages.has(source));
+      if(missingImages.length||images.some(image=>!image.naturalWidth||!image.getBoundingClientRect().width||!image.getBoundingClientRect().height))throw new Error('拼版有图片未能完整呈现，停止导出。');
       const expected=new Set([...document.querySelectorAll('#manuscript [data-evidence-id]')].map(element=>element.dataset.evidenceId));
       const actual=new Set([...document.querySelectorAll('#render-pages [data-evidence-id]')].map(element=>element.dataset.evidenceId));
       const missing=[...expected].filter(identity=>!actual.has(identity));
@@ -295,10 +351,27 @@ async function main() {
       const renderedFonts=new Set([...document.querySelectorAll('#render-pages .message-text')].map(element=>getComputedStyle(element).fontSize));
       if([...renderedFonts].some(size=>!originalFonts.has(size)))throw new Error('拼版改变了原文正文字号，停止导出。');
       const ids=topic=>new Set([...topic.querySelectorAll('[data-evidence-id]')].map(element=>element.dataset.evidenceId));
-      const originalTopics=[...document.querySelectorAll('#manuscript .content-panel > .topic')].map(ids).filter(group=>group.size);
-      const renderedTopics=[...document.querySelectorAll('#render-pages .content-panel > .topic')].map(ids);
-      const intactTopics=originalTopics.filter(group=>renderedTopics.some(rendered=>[...group].every(identity=>rendered.has(identity)))).length;
+      const originalTopics=[...document.querySelectorAll('#manuscript .content-panel > .topic, #manuscript > .topic')].filter(topic=>ids(topic).size);
+      const renderedTopics=[...document.querySelectorAll('#render-pages .content-panel > .topic, #render-pages .page-body > .topic')];
+      const intactTopics=originalTopics.filter(topic=>renderedTopics.filter(rendered=>rendered.dataset.topicOrder===topic.dataset.topicOrder).length===1).length;
+      const textTotals=selector=>{
+        const totals=new Map();
+        for(const paragraph of document.querySelectorAll(selector)) {
+          const identity=paragraph.closest('[data-evidence-id]')?.dataset.evidenceId||'__note__';
+          totals.set(identity,(totals.get(identity)||'')+paragraph.textContent);
+        }
+        return new Map([...totals].map(([identity,text])=>[identity,Array.from(text).sort().join('')]));
+      };
+      const originalText=textTotals('#manuscript .message-text'),renderedText=textTotals('#render-pages .message-text');
+      const mismatchedText=[...new Set([...originalText.keys(),...renderedText.keys()])].filter(identity=>originalText.get(identity)!==renderedText.get(identity));
+      if(mismatchedText.length)throw new Error('拼版正文有遗漏或重复，停止导出。');
+      const readingOrder=[...document.querySelectorAll('#render-pages [data-topic-order]')].map(topic=>Number(topic.dataset.topicOrder));
+      const sequential=readingOrder.every((value,index)=>!index||value>=readingOrder[index-1]);
+      if(document.body.dataset.presentation==='reading' && document.body.dataset.layout!=='board' && !sequential)throw new Error('阅读版主题顺序发生倒退，停止导出。');
       return {source_images:images.map(image=>({natural_width:image.naturalWidth,natural_height:image.naturalHeight,width:image.getBoundingClientRect().width,height:image.getBoundingClientRect().height})),
+        reading_order:{sequential,topic_fragments:readingOrder.length},
+        text_coverage:{expected_characters:[...originalText.values()].reduce((sum,text)=>sum+Array.from(text).length,0),rendered_characters:[...renderedText.values()].reduce((sum,text)=>sum+Array.from(text).length,0),mismatched_sources:mismatchedText.length},
+        image_coverage:{expected_unique_images:expectedImages.size,rendered_unique_images:renderedImages.size,missing:missingImages.length},
         topic_integrity:{expected_topics:originalTopics.length,intact_topics:intactTopics,fragmented_topics:originalTopics.length-intactTopics},
         body_font_sizes:[...renderedFonts],
         source_coverage:{expected_unique_sources:expected.size,rendered_unique_sources:actual.size,missing:missing.length}};

@@ -1,0 +1,10 @@
+/* Reading copy: questions appear once; evidence stays in the separate archive. */
+body[data-presentation="reading"] .topic > h2 { font-size:16px; font-weight:400; color:#737b85; margin:0 0 14px; }
+body[data-presentation="reading"] .topic { padding-bottom:22px; margin-bottom:24px; }
+body[data-presentation="reading"] .block { margin-bottom:18px; }
+body[data-presentation="reading"] .block-label { font-size:18px; font-weight:600; margin-bottom:6px; color:#57616e; }
+body[data-presentation="reading"] .answer { padding-left:18px; }
+body[data-presentation="reading"] .attachment { margin-top:8px; }
+body[data-presentation="reading"] .source-image { margin:8px 0 16px; }
+body[data-presentation="reading"] .source-meta { display:none; }
+body[data-presentation="reading"] .message-text { line-height:1.65; }

@@ -44,6 +44,8 @@ function render(name,html) {
   const result=JSON.parse(child.stdout);
   assert.ok(result.dimensions.every(box=>box.height<=3600),'Page exceeded 3600px');
   assert.equal(result.source_coverage.missing,0,'Source IDs were lost');
+  assert.equal(result.image_coverage.missing,0,'Images were lost');
+  assert.equal(result.text_coverage.mismatched_sources,0,'Text was lost or duplicated');
   assert.ok(result.source_coverage.expected_unique_sources>0,'Completeness check was vacuous');
   for(const asset of result.source_images) {
     const natural=asset.natural_width/asset.natural_height,rendered=asset.width/asset.height;
@@ -68,6 +70,13 @@ assert.equal(withImage.source_images.length,1);
 assert.equal(withImage.source_coverage.expected_unique_sources,25);
 assert.equal(withImage.topic_integrity.fragmented_topics,0);
 
+const reading=render('reading',generated.replace('data-layout="collage"','data-presentation="reading" data-layout="collage"'));
+assert.equal(reading.layout_mode,'ordered-two');
+assert.equal(reading.reading_order.sequential,true,'Reading topics moved backwards across lanes/pages');
+assert.equal(reading.source_coverage.expected_unique_sources,24);
+assert.equal(reading.topic_integrity.fragmented_topics,0,'A small reading topic was fragmented');
+assert.ok(reading.blank_ratio<0.15,'The final reading page was not balanced');
+
 const board=render('board',generated.replace('data-layout="collage"','data-layout="board"'));
 assert.equal(board.layout_mode,'board');
 assert.ok(board.dimensions.every(box=>box.width===3200));
@@ -75,5 +84,6 @@ const qa=render('qa',shell(questions,'qa'));
 assert.equal(qa.layout_mode,'single');
 assert.ok(qa.dimensions.every(box=>box.width===1080));
 assert.equal(qa.source_coverage.expected_unique_sources,18);
+assert.equal(qa.topic_integrity.fragmented_topics,0,'Mobile pages separated a small question from its answer');
 
-console.log(JSON.stringify({directory,masonry,with_image:withImage,board:{page_count:board.page_count,source_coverage:board.source_coverage},qa:{page_count:qa.page_count,source_coverage:qa.source_coverage}},null,2));
+console.log(JSON.stringify({directory,masonry,with_image:withImage,reading,board:{page_count:board.page_count,source_coverage:board.source_coverage},qa:{page_count:qa.page_count,source_coverage:qa.source_coverage}},null,2));

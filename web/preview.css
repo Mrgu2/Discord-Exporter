@@ -1,17 +1,17 @@
-.image-preview{padding:0;border:1px solid #dadcd8;border-radius:12px;width:calc(100vw - 48px);max-width:1500px;height:calc(100dvh - 48px);max-height:1100px;background:#f4f4f1;color:#252a27;overflow:hidden;box-shadow:0 20px 80px #0003}
-.image-preview::backdrop{background:#1c211ec2;backdrop-filter:blur(6px)}
+.image-preview{padding:0;border:1px solid #d7dfec;border-radius:12px;width:calc(100vw - 48px);max-width:1500px;height:calc(100dvh - 48px);max-height:1100px;background:#f2f5fa;color:#233047;overflow:hidden;box-shadow:0 20px 80px #0003}
+.image-preview::backdrop{background:#182338c2;backdrop-filter:blur(6px)}
 .image-preview[open]{display:flex;flex-direction:column;animation:preview-in 180ms cubic-bezier(.18,.7,.3,1)}
-.image-preview-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 16px;background:#fff;border-bottom:1px solid #e3e4df;flex-shrink:0;font:14px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}
+.image-preview-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 16px;background:#fff;border-bottom:1px solid #e3e8f0;flex-shrink:0;font:14px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}
 .image-preview-title{font-weight:600;margin-right:auto;max-width:45%;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
 .image-preview button,.image-preview a{color:inherit;border:0;border-radius:6px;padding:7px 10px;background:transparent;text-decoration:none;font:inherit;cursor:pointer;white-space:nowrap}
-.image-preview button:hover,.image-preview a:hover{background:#eeefe9}.image-preview button:active{transform:scale(.97)}
-.image-preview button:focus-visible,.image-preview a:focus-visible{outline:2px solid #577263;outline-offset:2px}
+.image-preview button:hover,.image-preview a:hover{background:#eaf0ff}.image-preview button:active{transform:scale(.97)}
+.image-preview button:focus-visible,.image-preview a:focus-visible{outline:2px solid #345ed0;outline-offset:2px}
 .image-preview-stage{position:relative;min-height:0;flex:1;overflow:hidden;touch-action:none;cursor:grab;user-select:none}
 .image-preview-stage.is-dragging{cursor:grabbing}
 .image-preview-stage img{position:absolute;left:50%;top:50%;max-width:none!important;max-height:none!important;object-fit:contain;transform-origin:center;pointer-events:none;will-change:transform;box-shadow:0 2px 18px #0001}
-.image-preview-status{font-size:12px;color:#666e65;min-width:48px;text-align:center;font-variant-numeric:tabular-nums}
-.image-preview-hint{font:12px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;color:#6f766d;padding:8px 16px;text-align:center;border-top:1px solid #e3e4df;background:#fff;flex-shrink:0}
-.image-preview-status-message{position:absolute;inset:0;display:grid;place-items:center;color:#636b61;font-size:14px;pointer-events:none}
+.image-preview-status{font-size:12px;color:#66748a;min-width:48px;text-align:center;font-variant-numeric:tabular-nums}
+.image-preview-hint{font:12px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;color:#66748a;padding:8px 16px;text-align:center;border-top:1px solid #e3e8f0;background:#fff;flex-shrink:0}
+.image-preview-status-message{position:absolute;inset:0;display:grid;place-items:center;color:#66748a;font-size:14px;pointer-events:none}
 @keyframes preview-in{from{opacity:0;transform:translateY(6px) scale(.99)}to{opacity:1;transform:none}}
 @media(max-width:650px){.image-preview{width:100vw;height:100dvh;max-height:none;max-width:none;border:0;border-radius:0}.image-preview-bar{padding:10px;gap:4px}.image-preview-title{max-width:65%;flex-basis:calc(100% - 50px);order:-2}.image-preview [data-action=close]{order:-1;margin-left:auto}.image-preview-bar button,.image-preview-bar a{padding:9px;min-height:40px}.image-preview-hint{font-size:11px}}
 @media(prefers-reduced-motion:reduce){.image-preview[open]{animation:none}.image-preview button{transition:none!important}}

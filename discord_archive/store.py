@@ -210,6 +210,8 @@ class ArchiveStore:
                 CREATE INDEX IF NOT EXISTS idx_messages_reply ON messages(reply_to_channel_id, reply_to_message_id);
                 CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(channel_id, created_at);
                 CREATE INDEX IF NOT EXISTS idx_runs_channel ON runs(channel_id, run_id);
+                CREATE INDEX IF NOT EXISTS idx_run_messages_message_run
+                    ON run_messages(channel_id, message_id, run_id);
             """)
             # Additive migration keeps archives created by an earlier build.
             run_columns = {row["name"] for row in db.execute("PRAGMA table_info(run_messages)")}

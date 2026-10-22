@@ -59,6 +59,31 @@ class StoreContextTests(unittest.TestCase):
         self.assertEqual(historical["items"][0]["seed"]["content"],"morning answer")
         self.assertEqual(historical["items"][0]["followups"],[])
 
+    def test_reopening_older_archive_indexes_historical_message_lookups(self):
+        morning = self.save([msg(1,"original"),msg(2,"question",author="member")])
+        self.save([msg(1,"edited",edited_timestamp="2026-10-21T21:00:00Z")])
+        # An existing archive has only the run-first primary key. The additive
+        # startup migration must optimize it without changing saved observations.
+        self.store.conn.execute("DROP INDEX idx_run_messages_message_run")
+        self.store.close()
+        self.store = ArchiveStore(Path(self.directory.name)/"archive.sqlite3")
+        statements = []
+        self.store.conn.set_trace_callback(statements.append)
+        try:
+            historical = self.store.list_messages(as_of_run_id=morning)
+        finally:
+            self.store.conn.set_trace_callback(None)
+        self.assertEqual([item["content"] for item in historical],["original","question"])
+        lookups = [sql for sql in statements if sql.startswith("SELECT r.version_hash")]
+        self.assertEqual(len(lookups),2)
+        for sql in lookups:
+            plan = " ".join(row[3] for row in self.store.conn.execute("EXPLAIN QUERY PLAN "+sql))
+            self.assertIn("idx_run_messages_message_run",plan)
+            self.assertIn("channel_id=? AND message_id=? AND run_id<?",plan)
+        outer = next(sql for sql in statements if sql.startswith("SELECT m.*"))
+        plan = " ".join(row[3] for row in self.store.conn.execute("EXPLAIN QUERY PLAN "+outer))
+        self.assertIn("idx_run_messages_message_run",plan)
+
     def test_nested_reply_snapshot_and_context(self):
         question = msg(10,"what is the condition?",author="member")
         self.save([msg(11,"only after confirmation",referenced_message=question,

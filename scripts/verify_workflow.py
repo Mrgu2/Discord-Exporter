@@ -247,6 +247,7 @@ def verify():
             json_request("/api/render","POST",{"draft_id":draft["id"]},expected=202)
             rendered = wait_for_job(lambda result:bool(result.get("images")) and result.get("draft",{}).get("id") == draft["id"])
             require(rendered.get('layout_mode')=='stacked' and len(rendered['images'])==1,'The section strips were not combined into one image')
+            require(rendered.get('render_scale')==2,'The workflow did not produce a 2x HiDPI export')
             bands=rendered['draft']['render_verification']['bands']
             require([band['kind'] for band in bands]==['feed','qa'] and bands[0]['width']==bands[1]['width'] and bands[1]['y']>=bands[0]['y']+bands[0]['height'],'The feed and Q&A strips did not stack at equal width')
             all_images = rendered["images"]+[image for column in rendered["single_columns"] for image in column["images"]]
@@ -256,8 +257,8 @@ def verify():
                 png,_ = request(image)
                 require(png.startswith(b"\x89PNG\r\n\x1a\n"),"Rendered PNG could not be downloaded")
                 width,height = struct.unpack(">II",png[16:24])
-                require((image in rendered['images'] and width==4236 and height<=32000 and width*height<=80_000_000)
-                    or (image not in rendered['images'] and width==1080 and height<=3600),"Rendered image exceeded the output dimensions")
+                require((image in rendered['images'] and width==8472 and height<=64000 and width*height<=320_000_000)
+                    or (image not in rendered['images'] and width==2160 and height<=7200),"Rendered image exceeded the output dimensions")
                 dimensions.append({"width":width,"height":height})
 
             json_request("/api/status",phone=True,expected=401)

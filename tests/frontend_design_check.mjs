@@ -24,7 +24,7 @@ function fixture() {
     connectivity: {online: true}, credentials: {discord: true, model: false},
     archive: {message_count: 84, channel_count: 5, attachment_count: 2, attachment_failures: 0},
     drafts: [
-      {id: 'fictional-one', title: '演示 · 10 月 21 日尾盘答疑', created_at: '2026-10-22T01:20:00Z', status: 'ready', scope: 'day', date: '2026-10-21', message_count: 46, mode: 'evidence', layout: 'stacked', manuscript_url: '/output/fictional-one/manuscript.md'},
+      {id: 'fictional-one', title: '演示 · 10 月 21 日尾盘答疑', created_at: '2026-10-22T01:20:00Z', status: 'ready', scope: 'day', date: '2026-10-21', message_count: 46, mode: 'evidence', layout: 'horizontal', render_scale: 2, manuscript_url: '/output/fictional-one/manuscript.md'},
       {id: 'fictional-two', title: '演示 · 多个频道的每周回顾与后续补充核对记录', created_at: '2026-10-21T13:40:00Z', status: 'ready', scope: 'latest', message_count: 32, mode: 'evidence', layout: 'qa'},
       {id: 'fictional-failed', title: '演示 · 未完成的稿件', created_at: '2026-10-21T12:00:00Z', status: 'failed', error: '演示错误：请重试生成。'}
     ],
@@ -54,9 +54,11 @@ try {
     await page.waitForFunction(() => document.querySelectorAll('.channel-option').length === 5);
     const noOverflow = async label => assert.equal(await page.locator('body').evaluate(e => e.scrollWidth), width, `${width}px: ${label} overflowed`);
     await noOverflow('workspace');
-    assert.equal(await page.locator('#draft-layout').inputValue(), 'stacked');
-    assert.match(await page.locator('#draft-options-label').innerText(), /上下分区拼图/);
-    assert.match(await page.locator('#recent-drafts .draft-row').first().innerText(), /上下分区拼图/);
+    assert.equal(await page.locator('#draft-layout').inputValue(), 'horizontal');
+    assert.match(await page.locator('#draft-options-label').innerText(), /左右分区高清图/);
+    assert.match(await page.locator('#recent-drafts .draft-row').first().innerText(), /左右分区高清图/);
+    assert.match(await page.locator('#recent-drafts .draft-row').first().innerText(), /2× HiDPI/);
+    assert.doesNotMatch(await page.locator('#recent-drafts .draft-row').nth(1).innerText(), /HiDPI/);
     const manuscript = page.locator('#recent-drafts .draft-row').first().getByRole('link', {name: '文字稿', exact: true});
     assert.equal(await manuscript.getAttribute('href'), '/output/fictional-one/manuscript.md');
     assert.equal(await manuscript.getAttribute('download'), '');
@@ -85,7 +87,7 @@ try {
     await page.locator('#draft-button').click();
     await page.waitForFunction(() => document.querySelector('#toast').textContent.includes('整理任务已提交'));
     const draftRequest = mutations.find(m => m.endpoint === '/api/drafts');
-    assert.deepEqual(draftRequest.body, {scope: 'range', mode: 'evidence', format: 'both', layout: 'stacked', presentation: 'reading', title: '演示：范围稿件', start: '2026-10-20', end: '2026-10-21'});
+    assert.deepEqual(draftRequest.body, {scope: 'range', mode: 'evidence', format: 'both', layout: 'horizontal', presentation: 'reading', title: '演示：范围稿件', start: '2026-10-20', end: '2026-10-21'});
     await page.locator('.draft-options > summary').click();
     await page.locator('[data-view="library"]').click();
     assert.equal(await page.locator('#all-drafts .draft-row').count(), 3);

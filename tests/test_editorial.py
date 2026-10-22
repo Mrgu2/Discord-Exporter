@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+from unittest.mock import patch
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -69,7 +70,7 @@ class EditorialTests(unittest.TestCase):
             message(2,"等待确认后再考虑。",message_reference={"message_id":"1"}),
             message(3,"还有成交量条件。",timestamp="2026-10-21T14:01:00Z")])
         draft = self.service.generate({"scope":"latest"})
-        self.assertEqual(draft["layout"],"stacked")
+        self.assertEqual(draft["layout"],"horizontal")
         folder = self.root/"output"/draft["id"]
         manuscript = (folder/"manuscript.md").read_text()
         self.assertIn("在什么条件下？",manuscript)
@@ -81,6 +82,39 @@ class EditorialTests(unittest.TestCase):
         self.assertEqual(self.service.list_drafts()[0]["id"],draft["id"])
         evidence = json.loads((folder/"evidence.json").read_text())
         self.assertEqual(evidence["groups"][0]["answers"][0]["content"],"等待确认后再考虑。")
+
+    def test_render_saves_actual_resolution_for_main_and_mobile_images(self):
+        self.save([message(1,'等待市场确认之后再考虑。')])
+        draft = self.service.generate({'scope':'latest'})
+        outputs = [
+            {'images':['long-01.png'],'dimensions':[{'width':8000,'height':4000}],'layout_mode':'horizontal',
+                'render_scale':2,'css_dimensions':[{'width':4000,'height':2000}],'pixel_font_sizes':['54px']},
+            {'images':['long-01.png'],'dimensions':[{'width':2120,'height':3000}],'layout_mode':'single',
+                'render_scale':2,'css_dimensions':[{'width':1060,'height':1500}],'pixel_font_sizes':['48px']},
+        ]
+        with patch('discord_archive.editorial.shutil.which',return_value='/fixture/node'), \
+                patch('discord_archive.editorial.subprocess.run') as run:
+            run.side_effect = [type('Result',(),{'returncode':0,'stdout':json.dumps(output)}) for output in outputs]
+            result = self.service.render(draft['id'])
+        stored = json.loads((Path(draft['path']).parent/'metadata.json').read_text())
+        for actual,expected in [(stored,outputs[0]),(stored['single_columns'][0],outputs[1])]:
+            self.assertEqual(actual['image_dimensions'],expected['dimensions'])
+            for key in ['render_scale','css_dimensions','pixel_font_sizes']:
+                self.assertEqual(actual[key],expected[key])
+                self.assertEqual(actual['render_verification'][key],expected[key])
+        for key in ['render_scale','css_dimensions','pixel_font_sizes']:
+            self.assertEqual(result[key],outputs[0][key])
+
+    def test_legacy_render_result_is_not_labeled_hidpi(self):
+        self.save([message(1,'等待市场确认之后再考虑。')])
+        draft = self.service.generate({'scope':'latest','layout':'qa'})
+        output = {'images':['long-01.png'],'dimensions':[{'width':1060,'height':1500}],'layout_mode':'single'}
+        with patch('discord_archive.editorial.shutil.which',return_value='/fixture/node'), \
+                patch('discord_archive.editorial.subprocess.run') as run:
+            run.return_value.returncode = 0
+            run.return_value.stdout = json.dumps(output)
+            rendered = self.service.render(draft['id'])
+        self.assertEqual(rendered['draft']['render_scale'],1)
 
     def test_missing_reply_marked_and_neighbor_not_written_as_question(self):
         self.save([message(1,"邻近但无关的问题",author="member"),message(2,"对",message_reference={"message_id":"999"})])

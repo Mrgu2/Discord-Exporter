@@ -17,8 +17,8 @@ const directory=path.resolve('artifacts');fs.mkdirSync(directory,{recursive:true
 const browser=await playwright.chromium.launch({headless:true,executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'});
 const results=[];
 try{
-  for(const [name,width,height,timezoneId] of [['desktop',1360,900,'Asia/Shanghai'],['mobile',390,844,'Europe/London']]){
-    const context=await browser.newContext({viewport:{width,height},timezoneId});
+  for(const [name,width,height,timezoneId,dpr] of [['desktop',1360,900,'Asia/Shanghai',1],['mobile',390,844,'Europe/London',3]]){
+    const context=await browser.newContext({viewport:{width,height},timezoneId,deviceScaleFactor:dpr,isMobile:name==='mobile',hasTouch:name==='mobile'});
     const page=await context.newPage(),errors=[],mutations=[];
     page.on('pageerror',error=>errors.push(error.message));
     const rasterFixture=Buffer.from(await page.evaluate(()=>{
@@ -46,9 +46,9 @@ try{
     const visible=await page.locator('body').innerText();
     assert.ok(!visible.includes('America/New_York'),'Raw market timezone leaked into the normal flow');
     assert.ok(!visible.includes('频道 ID'),'Normal operation exposed channel IDs');
-    assert.equal(await page.locator('#draft-layout').inputValue(),'stacked','Stacked export should be the default');
-    assert.match(await page.locator('#draft-options-label').textContent(),/上下分区拼图/);
-    assert.equal(await page.locator('#draft-layout option[value="horizontal"]').count(),1,'Horizontal export must remain selectable');
+    assert.equal(await page.locator('#draft-layout').inputValue(),'horizontal','Horizontal export should be the default');
+    assert.match(await page.locator('#draft-options-label').textContent(),/左右分区高清图/);
+    assert.equal(await page.locator('#draft-layout option[value="stacked"]').count(),1,'Stacked export must remain selectable');
     await page.locator('.advanced-settings > summary').click();
     await page.locator('#timezone').waitFor({state:'visible'});
     assert.equal(await page.locator('#timezone').evaluate(element=>element.tagName),'SELECT');
@@ -115,14 +115,18 @@ try{
     await page.waitForFunction(()=>{
       const image=document.querySelector('.image-preview img');return image.naturalWidth===24000&&image.naturalHeight===800&&image.style.visibility==='visible';
     });
-    // At native resolution, one-pixel stripes must remain black/white and the
+    await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+    // At one source pixel per physical display pixel, stripes must stay black/white and the
     // far right must retain its own colour rather than wrap the first column.
-    for(let attempt=0;attempt<30;attempt++) {
-      if(await page.locator('.image-preview img').evaluate(image=>image.getBoundingClientRect().width>=image.naturalWidth-1))break;
-      await page.locator('.image-preview [data-action="in"]').click();
-    }
+    const nativeZoomRatio=await page.locator('.image-preview img').evaluate(image=>image.naturalWidth/(devicePixelRatio*image.getBoundingClientRect().width));
+    // Touch emulation does not route a hardware mouse wheel. Dispatch the same
+    // viewer zoom event to establish an exact physical-pixel test boundary.
+    await page.locator('.image-preview-stage').dispatchEvent('wheel',{deltaY:-Math.log(nativeZoomRatio)/.002,clientX:wx,clientY:wy});
     await page.waitForFunction(()=>{
-      const image=document.querySelector('.image-preview img');return Math.abs(image.getBoundingClientRect().width-image.naturalWidth)<1;
+      const image=document.querySelector('.image-preview img');return Math.abs(image.getBoundingClientRect().width*devicePixelRatio-image.naturalWidth)<1;
+    },null,{timeout:5000}).catch(async error=>{
+      const state=await page.locator('.image-preview img').evaluate(image=>({natural_width:image.naturalWidth,css_width:image.getBoundingClientRect().width,dpr:devicePixelRatio,style_width:image.style.width}));
+      throw new Error(`${name}: native display scale was not reached: ${JSON.stringify(state)}`,{cause:error});
     });
     await page.mouse.move(wx,wy);await page.mouse.down();await page.mouse.move(wx+24000,wy,{steps:8});await page.mouse.up();
     await page.waitForFunction(()=>{
@@ -134,10 +138,10 @@ try{
         const image=new Image();image.src='data:image/png;base64,'+encoded;await image.decode();
         const canvas=document.createElement('canvas');canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;
         const context=canvas.getContext('2d');context.drawImage(image,0,0);
-        return [...context.getImageData(Math.round(x),Math.round(y),count,1).data];
+        return [...context.getImageData(Math.round(x*devicePixelRatio),Math.round(y*devicePixelRatio),count,1).data];
       },{encoded,x,y,count});
     };
-    const stripePixels=await pixelSample(wideStage.x+80,wy,64);
+    const stripePixels=await pixelSample(wideStage.x+80/dpr,wy,64);
     const stripeValues=Array.from({length:64},(_,i)=>stripePixels[i*4]);
     assert.ok(stripeValues.filter(value=>value<=8||value>=247).length>=60,'Native pixels became a blurred fitted texture');
     assert.ok(stripeValues.some(value=>value<=8)&&stripeValues.some(value=>value>=247),'Native one-pixel detail was lost');
@@ -156,7 +160,7 @@ try{
     await page.screenshot({path:path.join(directory,`ui-final-${name}.png`),fullPage:true});
     assert.deepEqual(errors,[]);
     assert.deepEqual(mutations,[],'UI acceptance unexpectedly attempted an API mutation');
-    results.push({viewport:name,width,timezone:timezoneId,channels:5,console_errors:errors.length,advanced_fields_hidden:true,preview_keyboard:true,horizontal_preview:{height_fit:true,left_start:true,right_edge_reachable:true,keyboard_pan:true,zoom_in_out:true,fit_screen:true,native_pixel_detail:true,no_right_edge_wrap:true},reduced_motion:true});
+    results.push({viewport:name,width,device_pixel_ratio:await page.evaluate(()=>devicePixelRatio),timezone:timezoneId,channels:5,console_errors:errors.length,advanced_fields_hidden:true,preview_keyboard:true,horizontal_preview:{height_fit:true,left_start:true,right_edge_reachable:true,keyboard_pan:true,zoom_in_out:true,fit_screen:true,native_pixel_detail:true,no_right_edge_wrap:true},reduced_motion:true});
     await context.close();
   }
   console.log(JSON.stringify({status:'passed',read_only:true,results,screenshots:directory},null,2));

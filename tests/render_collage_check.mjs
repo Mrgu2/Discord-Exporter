@@ -39,7 +39,7 @@ const fixture=process.argv[2]?fs.readFileSync(path.resolve(process.argv[2]),'utf
 function render(name,html,maximumHeight=3600) {
   const input=path.join(directory,name+'.html'),output=path.join(directory,name);
   fs.writeFileSync(input,html);
-  const child=spawnSync(process.execPath,[path.join(project,'scripts','render.mjs'),input,output],{encoding:'utf8',timeout:120000});
+  const child=spawnSync(process.execPath,[path.join(project,'scripts','render.mjs'),input,output,'1'],{encoding:'utf8',timeout:120000});
   assert.equal(child.status,0,child.stderr || 'Renderer failed');
   const result=JSON.parse(child.stdout);
   assert.ok(result.dimensions.every(box=>box.height<=maximumHeight),'Page exceeded its height limit');

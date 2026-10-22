@@ -2,8 +2,9 @@
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
+import fs from 'node:fs/promises';
 import {createRequire} from 'node:module';
-import {stitchHorizontalPng,stitchPngGrid} from '../scripts/png.mjs';
+import {stitchHorizontalPng,stitchPngGrid,writePngGrid} from '../scripts/png.mjs';
 const require=createRequire(import.meta.url);
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE||path.join(os.homedir(),'.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright'));
 const colorTypes=new Set(['sRGB','iCCP','gAMA','cHRM']);
@@ -33,6 +34,7 @@ function assertSrgb(buffer){
   assert.ok(parts.findIndex(part=>part.type==='sRGB')<parts.findIndex(part=>part.type==='IDAT'));
 }
 const browser=await chromium.launch({headless:true,executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'});
+const directory=await fs.mkdtemp(path.join(os.tmpdir(),'discord-png-stream-'));
 try{
   const page=await browser.newPage();
   const fixtures=await page.evaluate(()=>{
@@ -80,6 +82,10 @@ try{
     const colors=chunks(stitchHorizontalPng([input])).filter(part=>colorTypes.has(part.type));
     assert.equal(colors.length,1,`${type} was supplemented with an unwanted sRGB label`);
     assert.equal(colors[0].type,type);assert.deepEqual(colors[0].data,data,`${type} metadata changed`);
+    const filename=path.join(directory,`profile-${type}.png`);
+    await writePngGrid([{buffer:input,x:0,y:0}],4096,32,filename);
+    const streamedColors=chunks(await fs.readFile(filename)).filter(part=>colorTypes.has(part.type));
+    assert.equal(streamedColors.length,1);assert.equal(streamedColors[0].type,type);assert.deepEqual(streamedColors[0].data,data);
   }
   const broken=Buffer.from(tiles[0]);broken[broken.length-1]^=1;
   assert.throws(()=>stitchHorizontalPng([broken]),/校验/);
@@ -104,12 +110,7 @@ try{
     return result;
   });
   const gridResults=[];
-  for(const fixture of gridFixtures){
-    const placements=fixture.tiles.map(tile=>({...tile,buffer:Buffer.from(tile.buffer,'base64')}));
-    // Reverse input order to verify that x/y placement drives composition.
-    const composed=stitchPngGrid([...placements].reverse(),fixture.width,fixture.height);
-    assertSrgb(composed);
-    assert.equal(composed.readUInt32BE(16),fixture.width);assert.equal(composed.readUInt32BE(20),fixture.height);
+  async function verifyGridPixels(composed,width,height){
     const gridSamples=await page.evaluate(async({source,width,height})=>{
       const image=new Image();image.src=source;await image.decode();
       const canvas=document.createElement('canvas');canvas.width=canvas.height=1;
@@ -121,13 +122,34 @@ try{
         samples.push({x,y,pixel:[...context.getImageData(0,0,1,1).data]});
       }
       return samples;
-    },{source:'data:image/png;base64,'+composed.toString('base64'),width:fixture.width,height:fixture.height});
+    },{source:'data:image/png;base64,'+composed.toString('base64'),width,height});
     for(const {x,y,pixel} of gridSamples)assert.deepEqual(pixel,[(x*37+y*3)&255,((x>>>8)+(y>>>4)*11)&255,((y>>>8)*17+(x>>>4)*3)&255,255],`Grid pixel changed at ${x},${y}`);
+    return gridSamples.length;
+  }
+  for(const fixture of gridFixtures){
+    const placements=fixture.tiles.map(tile=>({...tile,buffer:Buffer.from(tile.buffer,'base64')}));
+    // Reverse input order to verify that x/y placement drives composition.
+    const composed=stitchPngGrid([...placements].reverse(),fixture.width,fixture.height);
+    assertSrgb(composed);
+    assert.equal(composed.readUInt32BE(16),fixture.width);assert.equal(composed.readUInt32BE(20),fixture.height);
+    const nativeSamples=await verifyGridPixels(composed,fixture.width,fixture.height);
+    const filename=path.join(directory,`${fixture.width}x${fixture.height}.png`);
+    let largestAllocation=0;const allocate=Buffer.alloc;
+    try{
+      Buffer.alloc=(size,...options)=>{largestAllocation=Math.max(largestAllocation,size);return allocate(size,...options);};
+      assert.deepEqual(await writePngGrid([...placements].reverse(),fixture.width,fixture.height,filename),{width:fixture.width,height:fixture.height});
+    }finally{Buffer.alloc=allocate;}
+    assert.ok(largestAllocation<=Math.max(fixture.width*4+1,16*1024+12),'Streaming writer exceeded the scanline/deflate chunk allocation bound');
+    const streamed=await fs.readFile(filename);assertSrgb(streamed);
+    assert.equal(streamed.readUInt32BE(16),fixture.width);assert.equal(streamed.readUInt32BE(20),fixture.height);
+    const streamedSamples=await verifyGridPixels(streamed,fixture.width,fixture.height);
+    await assert.rejects(writePngGrid(placements.slice(0,-1),fixture.width,fixture.height,path.join(directory,'missing.png')),/缺失/);
+    await assert.rejects(writePngGrid([...placements,placements[0]],fixture.width,fixture.height,path.join(directory,'overlap.png')),/重叠/);
     assert.throws(()=>stitchPngGrid(placements.slice(0,-1),fixture.width,fixture.height),/缺失/);
     assert.throws(()=>stitchPngGrid([...placements,placements[0]],fixture.width,fixture.height),/重叠/);
     assert.throws(()=>stitchPngGrid([{...placements[0],x:fixture.width}],fixture.width,fixture.height),/边界/);
     assert.throws(()=>stitchPngGrid([{...placements[0],x:.5}],fixture.width,fixture.height),/位置/);
-    gridResults.push({width:fixture.width,height:fixture.height,tiles:placements.length,native_pixel_samples:gridSamples.length});
+    gridResults.push({width:fixture.width,height:fixture.height,tiles:placements.length,native_pixel_samples:nativeSamples,streamed_native_pixel_samples:streamedSamples,largest_stream_allocation:largestAllocation});
   }
   assert.throws(()=>stitchPngGrid([],32,32),/没有/);
   assert.throws(()=>stitchPngGrid([{buffer:tiles[0],x:0,y:0}],32001,32),/尺寸/);
@@ -140,5 +162,42 @@ try{
   const unsupported=Buffer.from(tiles[0]);unsupported[24]=16;
   unsupported.writeUInt32BE(checksum(unsupported.subarray(12,29)),29);
   assert.throws(()=>stitchPngGrid([{buffer:unsupported,x:0,y:0}],4096,32),/格式/);
-  console.log(JSON.stringify({status:'passed',width:16692,height:32,native_pixel_samples:samples.length,seams_verified:true,right_edge_wrap:false,corrupt_tiles_rejected:true,grid:gridResults,grid_missing_overlap_bounds_format_rejected:true,output_chunk_crcs_valid:true,default_srgb_tagged:true,existing_color_tags_preserved:['sRGB','iCCP','gAMA','cHRM']}));
+  const oversized=Buffer.from(tiles[0]);oversized.writeUInt32BE(4097,16);oversized.writeUInt32BE(checksum(oversized.subarray(12,29)),29);
+  const wideFixtures=await page.evaluate(()=>{
+    const tiles=[];
+    for(let x=0;x<64000;x+=4096){
+      const canvas=document.createElement('canvas');canvas.width=Math.min(4096,64000-x);canvas.height=1;
+      const context=canvas.getContext('2d');context.fillStyle='rgb(37, 89, 173)';context.fillRect(0,0,canvas.width,1);
+      tiles.push({x,y:0,buffer:canvas.toDataURL('image/png').split(',')[1]});
+    }
+    return tiles;
+  });
+  const widePlacements=wideFixtures.map(tile=>({...tile,buffer:Buffer.from(tile.buffer,'base64')}));
+  const wideFile=path.join(directory,'64000x1.png');await writePngGrid(widePlacements,64000,1,wideFile);
+  const wideOutput=await fs.readFile(wideFile);assertSrgb(wideOutput);
+  assert.equal(wideOutput.readUInt32BE(16),64000);assert.equal(wideOutput.readUInt32BE(20),1);
+  const widePixel=await page.evaluate(async source=>{
+    const image=new Image();image.src=source;await image.decode();
+    const canvas=document.createElement('canvas');canvas.width=canvas.height=1;
+    const context=canvas.getContext('2d');context.drawImage(image,63999,0,1,1,0,0,1,1);
+    return [...context.getImageData(0,0,1,1).data];
+  },'data:image/png;base64,'+wideOutput.toString('base64'));
+  assert.deepEqual(widePixel,[37,89,173,255]);
+  assert.throws(()=>stitchPngGrid(widePlacements,64000,1),/尺寸/,'The synchronous API unexpectedly relaxed its size limit');
+  await assert.rejects(writePngGrid([{buffer:oversized,x:0,y:0}],4097,32,path.join(directory,'oversized.png')),/4096/);
+  await assert.rejects(writePngGrid([{buffer:tiles[0],x:0,y:0}],64001,32,path.join(directory,'too-wide.png')),/尺寸/);
+  await assert.rejects(writePngGrid([{buffer:tiles[0],x:0,y:0}],32,64001,path.join(directory,'too-tall.png')),/尺寸/);
+  await assert.rejects(writePngGrid([{buffer:tiles[0],x:0,y:0}],20000,20000,path.join(directory,'too-many-pixels.png')),/尺寸/);
+  await assert.rejects(writePngGrid([{buffer:broken,x:0,y:0}],4096,32,path.join(directory,'bad-crc.png')),/校验/);
+  await assert.rejects(writePngGrid([{buffer:tiles[0].subarray(0,20),x:0,y:0}],4096,32,path.join(directory,'truncated.png')),/完整/);
+  await assert.rejects(writePngGrid([{buffer:unsupported,x:0,y:0}],4096,32,path.join(directory,'bad-format.png')),/格式/);
+  await assert.rejects(writePngGrid(Array.from({length:65},(_,x)=>({buffer:p3,x,y:0})),65,1,path.join(directory,'too-many-streams.png')),/片段过多/);
+  const protectedFile=path.join(directory,'protected.png'),sentinel=Buffer.from('existing output must survive an incomplete stream');
+  await fs.writeFile(protectedFile,sentinel);
+  const invalidStream=Buffer.concat([tiles[0].subarray(0,8),nativeChunks[0].raw,colorChunk('IDAT',Buffer.from([0,0,0])),colorChunk('IEND',Buffer.alloc(0))]);
+  await assert.rejects(writePngGrid([{buffer:invalidStream,x:0,y:0}],4096,32,protectedFile));
+  assert.deepEqual(await fs.readFile(protectedFile),sentinel,'A failed stream replaced an existing output');
+  assert.ok(!(await fs.readdir(directory)).some(name=>name.endsWith('.part')),'A failed stream left its temporary output');
+  for(const name of ['missing.png','overlap.png','oversized.png','too-wide.png','too-tall.png','too-many-pixels.png','bad-crc.png','truncated.png','bad-format.png','too-many-streams.png'])await assert.rejects(fs.access(path.join(directory,name)),{code:'ENOENT'});
+  console.log(JSON.stringify({status:'passed',directory,width:16692,height:32,native_pixel_samples:samples.length,seams_verified:true,right_edge_wrap:false,corrupt_tiles_rejected:true,grid:gridResults,grid_missing_overlap_bounds_format_rejected:true,streaming_grid_verified:true,failed_stream_cleanup:true,output_chunk_crcs_valid:true,default_srgb_tagged:true,existing_color_tags_preserved:['sRGB','iCCP','gAMA','cHRM']}));
 }finally{await browser.close();}

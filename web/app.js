@@ -258,7 +258,7 @@
   function updateDraftOptionsLabel() {
     const scope = document.querySelector('input[name="scope"]:checked').value;
     const layout = $('draft-layout').value;
-    text('draft-options-label', `${{ latest: '最近一轮', day: '整个交易日', range: '自选日期' }[scope]} · ${{ stacked: '上下分区拼图', horizontal: '横向无缝长图', collage: '自动拼版', board: '四栏拼版', qa: '独立问答页' }[layout]}`);
+    text('draft-options-label', `${{ latest: '最近一轮', day: '整个交易日', range: '自选日期' }[scope]} · ${{ stacked: '上下分区拼图', horizontal: '左右分区高清图', collage: '自动拼版', board: '四栏拼版', qa: '独立问答页' }[layout]}`);
   }
   function setupDisclosureMotion() {
     const animations = new WeakMap();
@@ -353,7 +353,8 @@
     const messageCount = first(draft.message_count, draft.source_count, draft.messages_count);
     if (messageCount !== undefined) meta.append(node('span', '', `${number(messageCount)} 条消息`));
     if (draft.mode === 'model') meta.append(node('span', '', '模型整理'));
-    if (draft.layout) meta.append(node('span', '', { stacked: '上下分区拼图', horizontal: '横向无缝长图', collage: '自动拼版', board: '四栏拼版', qa: '问答页' }[draft.layout] || draft.layout));
+    if (draft.layout) meta.append(node('span', '', { stacked: '上下分区拼图', horizontal: '左右分区高清图', collage: '自动拼版', board: '四栏拼版', qa: '问答页' }[draft.layout] || draft.layout));
+    if (draft.render_scale === 2) meta.append(node('span', '', '2× HiDPI'));
     if (Array.isArray(draft.warnings) && draft.warnings.length) meta.append(node('span', 'draft-state', `${draft.warnings.length} 项待核对`));
     if (draft.error) meta.append(node('span', 'draft-state failed', typeof draft.error === 'string' ? draft.error : draft.error.message || '生成失败'));
     info.append(title, meta); row.append(info);

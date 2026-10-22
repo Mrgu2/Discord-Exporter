@@ -1,15 +1,16 @@
 #!/usr/bin/env node
-// Render one local manuscript into semantic 1080px pages, never tall crops.
+// Render semantic manuscript layouts directly at 2x device-pixel density.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
-import { stitchHorizontalPng, stitchPngGrid } from './png.mjs';
+import { writePngGrid } from './png.mjs';
 
 const require = createRequire(import.meta.url);
 const input = path.resolve(process.argv[2] || '');
 const output = path.resolve(process.argv[3] || path.dirname(input));
+const RENDER_SCALE = Number(process.argv[4] || 2);
 const WIDTH = 1080, MAX_HEIGHT = 3600, MAX_CANVAS_WIDTH = 32000, MAX_CANVAS_PIXELS = 80_000_000;
 
 async function loadPlaywright() {
@@ -23,6 +24,7 @@ async function loadPlaywright() {
 }
 
 async function main() {
+  if (![1,2].includes(RENDER_SCALE)) throw new Error('导出倍率仅支持 1× 或 2× HiDPI。');
   if (!fs.statSync(input).isFile()) throw new Error('稿件 HTML 不存在。');
   fs.mkdirSync(output, { recursive: true });
   const playwright = await loadPlaywright();
@@ -32,7 +34,7 @@ async function main() {
   const executablePath = executables.find(candidate => fs.existsSync(candidate));
   const browser = await playwright.chromium.launch({headless:true, ...(executablePath ? {executablePath} : {})});
   try {
-    const page = await browser.newPage({viewport:{width:3200,height:MAX_HEIGHT},deviceScaleFactor:1});
+    const page = await browser.newPage({viewport:{width:3200,height:MAX_HEIGHT},deviceScaleFactor:RENDER_SCALE});
     await page.route('**/*', route => /^(file:|data:)/.test(route.request().url()) ? route.continue() : route.abort());
     await page.goto(pathToFileURL(input).href, {waitUntil:'load'});
     // Apply the current export design to new and previously saved manuscripts,
@@ -61,8 +63,8 @@ async function main() {
       const subtitle = original.querySelector('.document-meta')?.textContent || '';
       const sourcePanels = [...original.querySelectorAll('.panel-grid > .content-panel')];
       if(sourcePanels.length) {
-        const stacked=document.body.dataset.layout==='stacked';
-        const flowPanels=stacked?[...sourcePanels.filter(panel=>panel.dataset.kind==='feed'),...sourcePanels.filter(panel=>panel.dataset.kind!=='feed')]:sourcePanels;
+        const stacked=document.body.dataset.layout==='stacked',horizontal=document.body.dataset.layout==='horizontal';
+        const flowPanels=stacked||horizontal?[...sourcePanels.filter(panel=>panel.dataset.kind==='feed'),...sourcePanels.filter(panel=>panel.dataset.kind!=='feed')]:sourcePanels;
         let topicOrder=0;
         for(const panel of flowPanels)for(const topic of panel.querySelectorAll(':scope > .topic:not([data-archive-warnings])'))topic.dataset.topicOrder=String(topicOrder++);
         for(const topic of original.querySelectorAll('[data-archive-warnings]'))topic.dataset.topicOrder=String(topicOrder++);
@@ -89,25 +91,24 @@ async function main() {
         const holder=document.createElement('div');holder.id='render-pages';document.body.append(holder);original.style.display='none';
         const titleFor=panel=>sourcePanels[panel].querySelector(':scope > .category-title').textContent;
         const panelEntries=panel=>[...sourcePanels[panel].querySelectorAll(':scope > .topic')].map(element=>({panel,element:element.cloneNode(true)}));
-        if(stacked) {
+        if(stacked || horizontal) {
           const feeds=sourcePanels.map((panel,index)=>panel.dataset.kind==='feed'?index:null).filter(index=>index!==null);
           const questions=sourcePanels.map((panel,index)=>panel.dataset.kind!=='feed'?index:null).filter(index=>index!==null);
-          const entries=questions.flatMap(panelEntries).filter(entry=>!entry.element.hasAttribute('data-archive-warnings'));
-          const columns=Math.min(4,Math.max(feeds.length,Math.ceil(entries.length/6),1));
-          const columnWidth=1002,gutter=36,width=120+columns*columnWidth+(columns-1)*gutter;
-          const canvas=document.createElement('div');canvas.className='render-page composition-page stacked-page';canvas.style.width=width+'px';
+          const qaEntries=questions.flatMap(panelEntries).filter(entry=>!entry.element.hasAttribute('data-archive-warnings'));
+          const columns=Math.min(4,Math.max(feeds.length,Math.ceil(qaEntries.length/6),1));
+          const columnWidth=1002,gutter=36,bandGap=48;
+          let width=120+columns*columnWidth+(columns-1)*gutter;
+          const canvas=document.createElement('div');canvas.className='render-page composition-page '+(horizontal?'side-by-side-page':'stacked-page');canvas.style.width=width+'px';
           const heading=document.createElement('div');heading.className='page-heading';heading.textContent=title;
           const sub=document.createElement('div');sub.className='page-subtitle';sub.textContent=subtitle;
           canvas.append(heading,sub);holder.append(canvas);
-          const bands=[];
-          const rowFor=(kind,count)=>{
-            const band=document.createElement('section');band.className='stacked-band';band.dataset.bandKind=kind;
-            const row=document.createElement('div');row.className='composition-lanes';row.style.gridTemplateColumns=`repeat(${count},minmax(0,1fr))`;
-            band.append(row);canvas.append(band);bands.push(band);return {band,row};
-          };
-          const fillBand=(kind,entries,sharedTitle=false)=>{
+          const bandHolder=horizontal?document.createElement('div'):canvas;
+          if(horizontal){bandHolder.className='side-by-side-bands';bandHolder.style.cssText='display:flex;gap:48px;align-items:flex-start';canvas.append(bandHolder);}
+          const models=[];
+          const prepareBand=(kind,entries,sharedTitle=false)=>{
             if(!entries.length)return;
-            const {band,row}=rowFor(kind,columns);
+            const band=document.createElement('section');band.className='stacked-band';band.dataset.bandKind=kind;band.style.flex='none';
+            const row=document.createElement('div');row.className='composition-lanes';band.append(row);bandHolder.append(band);
             if(sharedTitle){const h2=document.createElement('h2');h2.className='category-title';h2.textContent=titleFor(entries[0].panel);band.prepend(h2);}
             const probe=document.createElement('section');probe.className='content-panel';
             const measure=document.createElement('div');measure.className='composition-lane';measure.style.width=columnWidth+'px';measure.append(probe);row.append(measure);
@@ -115,10 +116,13 @@ async function main() {
               const copy=entry.element.cloneNode(true);probe.append(copy);
               const weight=copy.getBoundingClientRect().height+parseFloat(getComputedStyle(copy).marginBottom);
               copy.remove();return weight;
-            });measure.remove();
-            // Contiguous partitions keep each complete Q&A together and read
-            // down one column before moving right. More content adds height.
-            const target=Math.min(columns,entries.length);
+            });measure.remove();models.push({kind,band,row,entries,weights,sharedTitle});
+          };
+          const populate=(model,count)=>{
+            const {band,row,entries,weights,sharedTitle}=model;
+            row.replaceChildren();row.style.gridTemplateColumns=`repeat(${count},minmax(0,1fr))`;
+            band.style.width=(count*columnWidth+(count-1)*gutter)+'px';
+            const target=Math.min(count,entries.length);
             const partition=limit=>{
               const parts=[[]];let load=0;
               entries.forEach((entry,index)=>{
@@ -141,22 +145,42 @@ async function main() {
                 section.append(entry.element.cloneNode(true));
               }
             }
+            const box=band.getBoundingClientRect(),heights=[...row.children].map(lane=>lane.getBoundingClientRect().height);
+            const tallest=Math.max(...heights);
+            return {count,width:Math.ceil(box.width),height:Math.ceil(box.height),blank:tallest?1-heights.reduce((sum,value)=>sum+value,0)/(count*tallest):0};
           };
-          fillBand('feed',feeds.flatMap(panelEntries).filter(entry=>!entry.element.hasAttribute('data-archive-warnings')));
-          fillBand('qa',entries,questions.length===1);
+          prepareBand('feed',feeds.flatMap(panelEntries).filter(entry=>!entry.element.hasAttribute('data-archive-warnings')));
+          prepareBand('qa',qaEntries,questions.length===1);
+          if(horizontal && models.length) {
+            // Keep the two semantic sections beside each other. Allocate each
+            // section its own consecutive columns and balance their heights.
+            const options=models.map(model=>Array.from({length:Math.min(8,model.entries.length)},(_,index)=>populate(model,index+1)));
+            const headerHeight=Math.ceil(heading.getBoundingClientRect().height+sub.getBoundingClientRect().height)+100;
+            let best;
+            for(const left of options[0])for(const right of options[1]||[null]) {
+              const chosen=right?[left,right]:[left],candidateWidth=120+chosen.reduce((sum,item)=>sum+item.width,0)+(chosen.length-1)*bandGap;
+              const candidateHeight=headerHeight+Math.max(...chosen.map(item=>item.height));
+              if(candidateWidth>MAX_CANVAS_WIDTH || candidateHeight>MAX_CANVAS_WIDTH || candidateWidth*candidateHeight>MAX_CANVAS_PIXELS)continue;
+              const imbalance=right?Math.abs(Math.log(left.height/right.height)):0;
+              const score=Math.abs(Math.log((candidateWidth/candidateHeight)/1.6))+0.35*imbalance+0.6*chosen.reduce((sum,item)=>sum+item.blank,0)+0.002*chosen.reduce((sum,item)=>sum+item.count,0);
+              if(!best || score<best.score)best={score,chosen,width:candidateWidth};
+            }
+            if(!best)throw new Error('横向长图超过单图尺寸限制，请缩小日期范围后重试。');
+            width=best.width;canvas.style.width=width+'px';models.forEach((model,index)=>populate(model,best.chosen[index].count));
+          }else models.forEach(model=>populate(model,columns));
           const notice=original.querySelector('[data-archive-warnings]');
           if(notice){const copy=notice.cloneNode(true);copy.classList.add('archive-notice');canvas.append(copy);}
           const height=Math.ceil(canvas.getBoundingClientRect().height);
-          if(height>MAX_CANVAS_WIDTH || width*height>MAX_CANVAS_PIXELS)throw new Error('上下分区拼图超过单图尺寸限制，请缩小日期范围后重试。');
+          if(height>MAX_CANVAS_WIDTH || width*height>MAX_CANVAS_PIXELS)throw new Error((horizontal?'横向长图':'上下分区拼图')+'超过单图尺寸限制，请缩小日期范围后重试。');
           let usedArea=0,totalArea=0;
-          for(const band of bands){const boxes=[...band.querySelectorAll('.composition-lane')].map(lane=>lane.getBoundingClientRect());const tallest=Math.max(...boxes.map(box=>box.height));usedArea+=boxes.reduce((sum,box)=>sum+box.width*box.height,0);totalArea+=boxes.reduce((sum,box)=>sum+box.width*tallest,0);}
-          return {count:1,width,layout_mode:'stacked',panel_heights:measured,column_width:columnWidth,blank_ratio:totalArea?Math.max(0,1-usedArea/totalArea):0,
-            bands:bands.map(band=>({kind:band.dataset.bandKind,columns:band.querySelectorAll('.composition-lane').length,
+          for(const {band} of models){const boxes=[...band.querySelectorAll('.composition-lane')].map(lane=>lane.getBoundingClientRect());const tallest=Math.max(...boxes.map(box=>box.height));usedArea+=boxes.reduce((sum,box)=>sum+box.width*box.height,0);totalArea+=boxes.reduce((sum,box)=>sum+box.width*tallest,0);}
+          return {count:1,width,layout_mode:horizontal?'horizontal':'stacked',panel_heights:measured,column_width:columnWidth,blank_ratio:totalArea?Math.max(0,1-usedArea/totalArea):0,
+            horizontal_columns:horizontal?models.reduce((sum,model)=>sum+model.row.children.length,0):undefined,
+            bands:models.map(({band})=>({kind:band.dataset.bandKind,columns:band.querySelectorAll('.composition-lane').length,
               x:Math.round(band.getBoundingClientRect().x-canvas.getBoundingClientRect().x),y:Math.round(band.getBoundingClientRect().y-canvas.getBoundingClientRect().y),
               width:Math.round(band.getBoundingClientRect().width),height:Math.ceil(band.getBoundingClientRect().height)}))};
         }
-        const horizontal=document.body.dataset.layout==='horizontal';
-        const ordered=horizontal || (document.body.dataset.presentation==='reading' && !board && sourcePanels.length>1);
+        const ordered= (document.body.dataset.presentation==='reading' && !board && sourcePanels.length>1);
         const candidates=ordered?[{mode:'ordered-two',width:2160,queues:[sourcePanels.flatMap((_,index)=>panelEntries(index))]}]:[{mode,width,queues:assignments.map(indices=>indices.flatMap(panelEntries))}];
         if(!ordered && !board && sourcePanels.length>1 && sourcePanels[descending[0].index].querySelectorAll(':scope > .topic').length>1) {
           // Measure complete question/answer topics at their real output width.
@@ -321,26 +345,6 @@ async function main() {
         choices.sort((a,b)=>a.blank_ratio-b.blank_ratio || a.pages.length-b.pages.length);
         const best=choices[0];
         for(const choice of choices.slice(1))for(const element of choice.pages)element.remove();
-        if(horizontal) {
-          // Compose columns directly from the measured semantic flow, rather
-          // than stitching screenshots with repeated page furniture.
-          const lanes=best.pages.flatMap(element=>[...element.querySelectorAll('.composition-lane')]).filter(lane=>lane.querySelector('.topic'));
-          const laneWidth=lanes[0].getBoundingClientRect().width;
-          const first=best.pages[0],style=getComputedStyle(first);
-          const gutter=parseFloat(getComputedStyle(first.querySelector('.composition-lanes')).columnGap)||0;
-          const width=Math.ceil(parseFloat(style.paddingLeft)+parseFloat(style.paddingRight)+lanes.length*laneWidth+(lanes.length-1)*gutter);
-          if(width>MAX_CANVAS_WIDTH)throw new Error('横向长图超过 32000 像素宽度，请缩小日期范围后重试。');
-          const panorama=document.createElement('div');panorama.className='render-page composition-page horizontal-page';panorama.style.width=width+'px';
-          const row=document.createElement('div');row.className='composition-lanes';row.style.gridTemplateColumns=`repeat(${lanes.length},${laneWidth}px)`;
-          panorama.append(first.querySelector('.page-heading').cloneNode(true),first.querySelector('.page-subtitle').cloneNode(true),row);
-          for(const lane of lanes)row.append(lane);
-          holder.append(panorama);
-          for(const element of best.pages)element.remove();
-          const height=Math.ceil(panorama.getBoundingClientRect().height);
-          if(height>MAX_HEIGHT || width*height>MAX_CANVAS_PIXELS)throw new Error('横向长图超过单图尺寸限制，请缩小日期范围后重试。');
-          return {count:1,width,layout_mode:'horizontal',panel_heights:measured,blank_ratio:best.blank_ratio,
-            horizontal_columns:lanes.length,column_width:laneWidth};
-        }
         return {count:best.pages.length,width:best.width,layout_mode:best.mode,panel_heights:measured,
           blank_ratio:best.blank_ratio,lane_heights:best.lane_heights,
           layout_candidates:choices.map(choice=>({mode:choice.mode,page_count:choice.pages.length,blank_ratio:choice.blank_ratio,lane_heights:choice.lane_heights}))};
@@ -468,49 +472,40 @@ async function main() {
         body_font_sizes:[...renderedFonts],
         source_coverage:{expected_unique_sources:expected.size,rendered_unique_sources:actual.size,missing:missing.length}};
     });
-    const images=[],dimensions=[],rasterTiles=[];
-    for (let index=0;index<rendered.count;index++) {
-      const locator=page.locator('.render-page').nth(index);
-      const box=await locator.boundingBox();
-      const filename=path.join(output,`long-${String(index+1).padStart(2,'0')}.png`);
-      let png;
-      if(rendered.layout_mode==='stacked') {
-        const width=Math.round(box.width),height=Math.ceil(box.height);
-        await locator.evaluate(element=>{
-          const frame=document.createElement('div');frame.id='raster-frame';frame.style.cssText='position:relative;overflow:hidden;background:white';
-          element.before(frame);frame.append(element);element.style.position='relative';element.style.margin='0';
-        });
-        const tiles=[];
-        for(let y=0;y<height;y+=4096)for(let x=0;x<width;x+=4096){
-          const tileWidth=Math.min(4096,width-x),tileHeight=Math.min(4096,height-y);
-          await page.locator('#raster-frame').evaluate((frame,{x,y,width,height})=>{
-            frame.style.width=width+'px';frame.style.height=height+'px';frame.firstElementChild.style.left=-x+'px';frame.firstElementChild.style.top=-y+'px';
-          },{x,y,width:tileWidth,height:tileHeight});
-          const tile=await page.locator('#raster-frame').screenshot({animations:'disabled'});
-          if(tile.readUInt32BE(16)!==tileWidth||tile.readUInt32BE(20)!==tileHeight)throw new Error('分区渲染片段尺寸异常。');
-          tiles.push({buffer:tile,x,y});rasterTiles.push({x,y,width:tileWidth,height:tileHeight});
-        }
-        png=stitchPngGrid(tiles,width,height);fs.writeFileSync(filename,png);
-      }else if(rendered.layout_mode==='horizontal') {
-        // Chromium can wrap screenshot pixels beyond its texture limit. Keep
-        // each capture narrow and paint the requested columns at viewport x=0.
-        await locator.evaluate((element,height)=>{
-          const frame=document.createElement('div');frame.id='raster-frame';frame.style.cssText=`position:relative;overflow:hidden;background:white;height:${height}px`;
-          element.before(frame);frame.append(element);element.style.position='relative';element.style.margin='0';
-        },Math.ceil(box.height));
-        const tiles=[];
-        for(let offset=0;offset<Math.round(box.width);offset+=4096){
-          const width=Math.min(4096,Math.round(box.width)-offset);
-          await page.locator('#raster-frame').evaluate((frame,{width,offset})=>{frame.style.width=width+'px';frame.firstElementChild.style.left=-offset+'px';},{width,offset});
-          const tile=await page.locator('#raster-frame').screenshot({animations:'disabled'});
-          if(tile.readUInt32BE(16)!==width||tile.readUInt32BE(20)!==Math.ceil(box.height))throw new Error('横向渲染片段尺寸异常。');
-          tiles.push(tile);rasterTiles.push({offset,width,height:Math.ceil(box.height)});
-        }
-        png=stitchHorizontalPng(tiles);fs.writeFileSync(filename,png);
-      }else png=await locator.screenshot({path:filename,animations:'disabled'});
-      images.push(filename);dimensions.push({width:png.readUInt32BE(16),height:png.readUInt32BE(20)});
+    const images=[],dimensions=[],cssDimensions=[],rasterTiles=[];
+    const boxes=[];
+    for(let index=0;index<rendered.count;index++) {
+      const box=await page.locator('.render-page').nth(index).boundingBox();
+      const width=Math.round(box.width),height=Math.ceil(box.height);
+      if(width*RENDER_SCALE>64000 || height*RENDER_SCALE>64000 || width*height*RENDER_SCALE**2>320_000_000)throw new Error('HiDPI 高清图超过单图尺寸限制，请缩小日期范围后重试。');
+      boxes.push({width,height});
     }
-    process.stdout.write(JSON.stringify({images,dimensions,page_count:rendered.count,layout_mode:rendered.layout_mode,panel_heights:rendered.panel_heights,horizontal_columns:rendered.horizontal_columns,column_width:rendered.column_width,bands:rendered.bands,
+    for(let index=0;index<rendered.count;index++) {
+      const locator=page.locator('.render-page').nth(index),{width,height}=boxes[index];
+      const filename=path.join(output,`long-${String(index+1).padStart(2,'0')}.png`);
+      await locator.evaluate(element=>{
+        const frame=document.createElement('div');frame.id='raster-frame';frame.style.cssText='position:absolute;left:0;top:0;overflow:hidden;background:white;z-index:1000';
+        element.before(frame);frame.append(element);element.style.position='relative';element.style.margin='0';
+      });
+      // Rasterize the DOM at the output density. Each captured device-pixel
+      // tile stays <=4096px; the final image is streamed without a full raw canvas.
+      const tiles=[],tileSize=4096/RENDER_SCALE;
+      for(let y=0;y<height;y+=tileSize)for(let x=0;x<width;x+=tileSize) {
+        const tileWidth=Math.min(tileSize,width-x),tileHeight=Math.min(tileSize,height-y);
+        await page.locator('#raster-frame').evaluate((frame,{x,y,width,height})=>{
+          frame.style.width=width+'px';frame.style.height=height+'px';frame.firstElementChild.style.left=-x+'px';frame.firstElementChild.style.top=-y+'px';
+        },{x,y,width:tileWidth,height:tileHeight});
+        const tile=await page.locator('#raster-frame').screenshot({animations:'disabled',scale:'device'});
+        if(tile.readUInt32BE(16)!==tileWidth*RENDER_SCALE || tile.readUInt32BE(20)!==tileHeight*RENDER_SCALE)throw new Error(`HiDPI 渲染片段尺寸异常：${tile.readUInt32BE(16)}×${tile.readUInt32BE(20)}，应为 ${tileWidth*RENDER_SCALE}×${tileHeight*RENDER_SCALE}。`);
+        tiles.push({buffer:tile,x:x*RENDER_SCALE,y:y*RENDER_SCALE});
+        rasterTiles.push({page:index,x:x*RENDER_SCALE,y:y*RENDER_SCALE,width:tileWidth*RENDER_SCALE,height:tileHeight*RENDER_SCALE});
+      }
+      await writePngGrid(tiles,width*RENDER_SCALE,height*RENDER_SCALE,filename);
+      // Remove only the temporary DOM wrapper before preparing the next page.
+      await page.locator('#raster-frame').evaluate(frame=>frame.replaceWith(frame.firstElementChild));
+      images.push(filename);dimensions.push({width:width*RENDER_SCALE,height:height*RENDER_SCALE});cssDimensions.push({width,height});
+    }
+    process.stdout.write(JSON.stringify({images,dimensions,render_scale:RENDER_SCALE,css_dimensions:cssDimensions,pixel_font_sizes:verification.body_font_sizes.map(size=>`${parseFloat(size)*RENDER_SCALE}px`),page_count:rendered.count,layout_mode:rendered.layout_mode,panel_heights:rendered.panel_heights,horizontal_columns:rendered.horizontal_columns,column_width:rendered.column_width,bands:rendered.bands,
       blank_ratio:rendered.blank_ratio,lane_heights:rendered.lane_heights,layout_candidates:rendered.layout_candidates,raster_tiles:rasterTiles,...verification}));
   } finally { await browser.close(); }
 }

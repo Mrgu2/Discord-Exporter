@@ -60,7 +60,7 @@ class DraftService:
         if scope not in {"latest","day","range"}:
             raise ValueError("整理范围须为 latest、day 或 range")
         rows = [row for row in config.get("channels",[]) if not isinstance(row,dict) or row.get("enabled",True)]
-        layout = request.get("layout","stacked")
+        layout = request.get("layout","horizontal")
         if layout == "board":
             rows = [row for row in rows if not isinstance(row,dict) or row.get("kind","feed") == "feed"]
             if len(rows) != 4:
@@ -114,9 +114,9 @@ class DraftService:
         if presentation not in {"reading", "full"}:
             raise ValueError("请选择精简阅读或完整原文")
         mode = request.get("mode","evidence")
-        layout = request.get("layout","stacked")
+        layout = request.get("layout","horizontal")
         if layout not in {"qa","board","collage","horizontal","stacked"}:
-            raise ValueError("请选择上下分区拼图、横向长图、自动拼版、四栏拼版或问答页")
+            raise ValueError("请选择左右分区高清图、上下分区拼图、自动拼版、四栏拼版或问答页")
         if mode not in {"evidence","model"}:
             raise ValueError("整理方式须为 evidence 或 model")
         if mode == "model":
@@ -425,9 +425,12 @@ class DraftService:
             if result.returncode:
                 safe_error = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "浏览器渲染失败"
                 raise ValueError(safe_error[:500])
-            return json.loads(result.stdout)
+            rendered = json.loads(result.stdout)
+            # Older renderer results describe 1x pixels; never label them HiDPI.
+            rendered.setdefault('render_scale',1)
+            return rendered
         rendered = render_file(folder/"index.html",folder)
-        verification_keys=('source_coverage','image_coverage','text_coverage','reading_order','topic_integrity','body_font_sizes','blank_ratio','structure','raster_tiles','bands')
+        verification_keys=('source_coverage','image_coverage','text_coverage','reading_order','topic_integrity','body_font_sizes','blank_ratio','structure','raster_tiles','bands','render_scale','css_dimensions','pixel_font_sizes')
         identity = folder.name
         images = [f"/output/{identity}/{Path(path).name}" for path in rendered["images"]]
         metadata = json.loads((folder/"metadata.json").read_text(encoding="utf-8"))
@@ -436,10 +439,14 @@ class DraftService:
             single = render_file(folder/column["file"],subfolder)
             column["images"] = [f'/output/{identity}/{subfolder.name}/{Path(path).name}' for path in single["images"]]
             column['image_coverage'] = single.get('image_coverage')
+            column.update(image_dimensions=single.get('dimensions',[]),render_scale=single['render_scale'],
+                css_dimensions=single.get('css_dimensions',[]),pixel_font_sizes=single.get('pixel_font_sizes',[]))
             column['render_verification'] = {key:single.get(key) for key in verification_keys}
         metadata.update(images=images,rendered_at=iso_time(),image_url=images[0] if images else None,
             layout_mode=rendered.get("layout_mode"),image_dimensions=rendered.get("dimensions",[]),image_coverage=rendered.get('image_coverage'),
+            render_scale=rendered['render_scale'],css_dimensions=rendered.get('css_dimensions',[]),pixel_font_sizes=rendered.get('pixel_font_sizes',[]),
             render_verification={key:rendered.get(key) for key in verification_keys})
         atomic_json(folder/"metadata.json",metadata)
         return {"images":images,"dimensions":rendered.get("dimensions",[]),"layout_mode":rendered.get("layout_mode"),
+            "render_scale":metadata['render_scale'],"css_dimensions":metadata['css_dimensions'],"pixel_font_sizes":metadata['pixel_font_sizes'],
             "panel_heights":rendered.get("panel_heights",[]),"single_columns":metadata.get("single_columns",[]),"draft":metadata}

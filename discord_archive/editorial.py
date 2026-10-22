@@ -77,7 +77,7 @@ class DraftService:
             successful = [run for run in self.store.list_runs(limit=10000) if run["status"] == "success" and run["channel_id"] in channels]
             if not successful:
                 raise ValueError("还没有成功保存的轮次，请先保存或导入一次")
-            if layout in {"board","collage"}:
+            if layout in {"board","collage","horizontal"}:
                 for channel in channels:
                     runs = [run for run in successful if run["channel_id"] == channel]
                     if runs:
@@ -115,8 +115,8 @@ class DraftService:
             raise ValueError("请选择精简阅读或完整原文")
         mode = request.get("mode","evidence")
         layout = request.get("layout","collage")
-        if layout not in {"qa","board","collage"}:
-            raise ValueError("排版须为 collage、board 或 qa")
+        if layout not in {"qa","board","collage","horizontal"}:
+            raise ValueError("请选择横向长图、自动拼版、四栏拼版或问答页")
         if mode not in {"evidence","model"}:
             raise ValueError("整理方式须为 evidence 或 model")
         if mode == "model":
@@ -194,7 +194,7 @@ class DraftService:
         archive_md, archive_html = self._documents({**metadata, 'presentation':'full', 'message_count':len(items)},source_groups,config)
         (folder/'archive.md').write_text(archive_md,encoding='utf-8')
         (folder/'archive.html').write_text(archive_html,encoding='utf-8')
-        if layout in {"collage","board"}:
+        if layout in {"collage","board","horizontal"}:
             document = self._panel_document(document,metadata,panels,config)
             for panel in panels:
                 single_name = f'single-{panel["channel_id"]}.html'
@@ -414,7 +414,7 @@ class DraftService:
                 raise ValueError(safe_error[:500])
             return json.loads(result.stdout)
         rendered = render_file(folder/"index.html",folder)
-        verification_keys=('source_coverage','image_coverage','text_coverage','reading_order','topic_integrity','body_font_sizes','blank_ratio')
+        verification_keys=('source_coverage','image_coverage','text_coverage','reading_order','topic_integrity','body_font_sizes','blank_ratio','structure','raster_tiles')
         identity = folder.name
         images = [f"/output/{identity}/{Path(path).name}" for path in rendered["images"]]
         metadata = json.loads((folder/"metadata.json").read_text(encoding="utf-8"))

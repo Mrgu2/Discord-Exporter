@@ -43,6 +43,11 @@ function render(name,html) {
   assert.equal(child.status,0,child.stderr || 'Renderer failed');
   const result=JSON.parse(child.stdout);
   assert.ok(result.dimensions.every(box=>box.height<=3600),'Page exceeded 3600px');
+  result.images.forEach((file,index)=>{
+    const png=fs.readFileSync(file);
+    assert.equal(png.readUInt32BE(16),result.dimensions[index].width,'PNG width differs from metadata');
+    assert.equal(png.readUInt32BE(20),result.dimensions[index].height,'PNG height differs from metadata');
+  });
   assert.equal(result.source_coverage.missing,0,'Source IDs were lost');
   assert.equal(result.image_coverage.missing,0,'Images were lost');
   assert.equal(result.text_coverage.mismatched_sources,0,'Text was lost or duplicated');
@@ -65,7 +70,8 @@ assert.ok(legacy,'Expected a measured main-side comparison');
 assert.ok(masonry.blank_ratio<legacy.blank_ratio/2,'Empty area did not materially improve');
 assert.ok(masonry.page_count<=legacy.page_count,'Composition added pages');
 
-const withImage=render('with-image',generated.replace('</div></main>',`<section class="content-panel"><h2 class="category-title">等比原图</h2><article class="topic">${block('image/1','原图','640 × 320 虚构图片',`<img class="source-image" src="${image}">`)}</article></section></div></main>`));
+const withImageHtml=generated.replace('</div></main>',`<section class="content-panel"><h2 class="category-title">等比原图</h2><article class="topic">${block('image/1','原图','640 × 320 虚构图片',`<img class="source-image" src="${image}">`)}</article></section></div></main>`);
+const withImage=render('with-image',withImageHtml);
 assert.equal(withImage.source_images.length,1);
 assert.equal(withImage.source_coverage.expected_unique_sources,25);
 assert.equal(withImage.topic_integrity.fragmented_topics,0);
@@ -77,6 +83,25 @@ assert.equal(reading.source_coverage.expected_unique_sources,24);
 assert.equal(reading.topic_integrity.fragmented_topics,0,'A small reading topic was fragmented');
 assert.ok(reading.blank_ratio<0.15,'The final reading page was not balanced');
 
+const horizontal=render('horizontal',withImageHtml.replace(questions,questions.repeat(3)).replace('data-layout="collage"','data-presentation="reading" data-layout="horizontal"'));
+assert.equal(horizontal.layout_mode,'horizontal');
+assert.equal(horizontal.page_count,1);
+assert.ok(horizontal.horizontal_columns>2);
+assert.ok(horizontal.dimensions[0].width>horizontal.dimensions[0].height,'Expected a panoramic image');
+assert.deepEqual(horizontal.structure,{headings:1,footers:0,columns:horizontal.horizontal_columns});
+assert.equal(horizontal.reading_order.sequential,true);
+assert.equal(horizontal.source_coverage.expected_unique_sources,25);
+assert.equal(horizontal.image_coverage.expected_unique_images,1);
+assert.equal(horizontal.topic_integrity.fragmented_topics,0);
+assert.ok(horizontal.dimensions[0].width<=32000 && horizontal.dimensions[0].width*horizontal.dimensions[0].height<=80_000_000);
+
+const oversizedInput=path.join(directory,'horizontal-oversized.html'),oversizedOutput=path.join(directory,'horizontal-oversized');
+fs.writeFileSync(oversizedInput,generated.replace(questions,questions.repeat(40)).replace('data-layout="collage"','data-layout="horizontal"'));
+const oversized=spawnSync(process.execPath,[path.join(project,'scripts','render.mjs'),oversizedInput,oversizedOutput],{encoding:'utf8',timeout:120000});
+assert.notEqual(oversized.status,0,'An unsafe panorama was exported');
+assert.match(oversized.stderr,/横向长图超过/);
+assert.ok(!fs.existsSync(path.join(oversizedOutput,'long-01.png')),'Oversized export left a partial image');
+
 const board=render('board',generated.replace('data-layout="collage"','data-layout="board"'));
 assert.equal(board.layout_mode,'board');
 assert.ok(board.dimensions.every(box=>box.width===3200));
@@ -86,4 +111,4 @@ assert.ok(qa.dimensions.every(box=>box.width===1080));
 assert.equal(qa.source_coverage.expected_unique_sources,18);
 assert.equal(qa.topic_integrity.fragmented_topics,0,'Mobile pages separated a small question from its answer');
 
-console.log(JSON.stringify({directory,masonry,with_image:withImage,reading,board:{page_count:board.page_count,source_coverage:board.source_coverage},qa:{page_count:qa.page_count,source_coverage:qa.source_coverage}},null,2));
+console.log(JSON.stringify({directory,masonry,with_image:withImage,reading,horizontal,oversized_rejected:true,board:{page_count:board.page_count,source_coverage:board.source_coverage},qa:{page_count:qa.page_count,source_coverage:qa.source_coverage}},null,2));

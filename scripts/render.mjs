@@ -5,11 +5,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
+import { stitchHorizontalPng } from './png.mjs';
 
 const require = createRequire(import.meta.url);
 const input = path.resolve(process.argv[2] || '');
 const output = path.resolve(process.argv[3] || path.dirname(input));
-const WIDTH = 1080, MAX_HEIGHT = 3600;
+const WIDTH = 1080, MAX_HEIGHT = 3600, MAX_CANVAS_WIDTH = 32000, MAX_CANVAS_PIXELS = 80_000_000;
 
 async function loadPlaywright() {
   const candidates = [process.env.PLAYWRIGHT_MODULE,
@@ -53,7 +54,7 @@ async function main() {
         meta.textContent=meta.dataset.renderMeta;
       }
     });
-    const rendered = await page.evaluate(({WIDTH,MAX_HEIGHT}) => {
+    const rendered = await page.evaluate(({WIDTH,MAX_HEIGHT,MAX_CANVAS_WIDTH,MAX_CANVAS_PIXELS}) => {
       const original = document.querySelector('#manuscript');
       if (!original) throw new Error('稿件缺少 manuscript 节点。');
       const title = original.querySelector('h1').textContent;
@@ -85,7 +86,8 @@ async function main() {
         const holder=document.createElement('div');holder.id='render-pages';document.body.append(holder);original.style.display='none';
         const titleFor=panel=>sourcePanels[panel].querySelector(':scope > .category-title').textContent;
         const panelEntries=panel=>[...sourcePanels[panel].querySelectorAll(':scope > .topic')].map(element=>({panel,element:element.cloneNode(true)}));
-        const ordered=document.body.dataset.presentation==='reading' && !board && sourcePanels.length>1;
+        const horizontal=document.body.dataset.layout==='horizontal';
+        const ordered=horizontal || (document.body.dataset.presentation==='reading' && !board && sourcePanels.length>1);
         const candidates=ordered?[{mode:'ordered-two',width:2160,queues:[sourcePanels.flatMap((_,index)=>panelEntries(index))]}]:[{mode,width,queues:assignments.map(indices=>indices.flatMap(panelEntries))}];
         if(!ordered && !board && sourcePanels.length>1 && sourcePanels[descending[0].index].querySelectorAll(':scope > .topic').length>1) {
           // Measure complete question/answer topics at their real output width.
@@ -250,6 +252,26 @@ async function main() {
         choices.sort((a,b)=>a.blank_ratio-b.blank_ratio || a.pages.length-b.pages.length);
         const best=choices[0];
         for(const choice of choices.slice(1))for(const element of choice.pages)element.remove();
+        if(horizontal) {
+          // Compose columns directly from the measured semantic flow, rather
+          // than stitching screenshots with repeated page furniture.
+          const lanes=best.pages.flatMap(element=>[...element.querySelectorAll('.composition-lane')]).filter(lane=>lane.querySelector('.topic'));
+          const laneWidth=lanes[0].getBoundingClientRect().width;
+          const first=best.pages[0],style=getComputedStyle(first);
+          const gutter=parseFloat(getComputedStyle(first.querySelector('.composition-lanes')).columnGap)||0;
+          const width=Math.ceil(parseFloat(style.paddingLeft)+parseFloat(style.paddingRight)+lanes.length*laneWidth+(lanes.length-1)*gutter);
+          if(width>MAX_CANVAS_WIDTH)throw new Error('横向长图超过 32000 像素宽度，请缩小日期范围后重试。');
+          const panorama=document.createElement('div');panorama.className='render-page composition-page horizontal-page';panorama.style.width=width+'px';
+          const row=document.createElement('div');row.className='composition-lanes';row.style.gridTemplateColumns=`repeat(${lanes.length},${laneWidth}px)`;
+          panorama.append(first.querySelector('.page-heading').cloneNode(true),first.querySelector('.page-subtitle').cloneNode(true),row);
+          for(const lane of lanes)row.append(lane);
+          holder.append(panorama);
+          for(const element of best.pages)element.remove();
+          const height=Math.ceil(panorama.getBoundingClientRect().height);
+          if(height>MAX_HEIGHT || width*height>MAX_CANVAS_PIXELS)throw new Error('横向长图超过单图尺寸限制，请缩小日期范围后重试。');
+          return {count:1,width,layout_mode:'horizontal',panel_heights:measured,blank_ratio:best.blank_ratio,
+            horizontal_columns:lanes.length,column_width:laneWidth};
+        }
         return {count:best.pages.length,width:best.width,layout_mode:best.mode,panel_heights:measured,
           blank_ratio:best.blank_ratio,lane_heights:best.lane_heights,
           layout_candidates:choices.map(choice=>({mode:choice.mode,page_count:choice.pages.length,blank_ratio:choice.blank_ratio,lane_heights:choice.lane_heights}))};
@@ -335,7 +357,7 @@ async function main() {
         if (Math.ceil(element.getBoundingClientRect().height)>MAX_HEIGHT) throw new Error('分页高度超出限制。');
       });
       return {count:pages.length,width:WIDTH,layout_mode:'single'};
-    }, {WIDTH,MAX_HEIGHT});
+    }, {WIDTH,MAX_HEIGHT,MAX_CANVAS_WIDTH,MAX_CANVAS_PIXELS});
     const verification=await page.evaluate(async()=>{
       const images=[...document.querySelectorAll('#render-pages img')];
       await Promise.all(images.map(image=>image.complete?Promise.resolve():new Promise(resolve=>{image.onload=resolve;image.onerror=resolve;})));
@@ -367,25 +389,43 @@ async function main() {
       if(mismatchedText.length)throw new Error('拼版正文有遗漏或重复，停止导出。');
       const readingOrder=[...document.querySelectorAll('#render-pages [data-topic-order]')].map(topic=>Number(topic.dataset.topicOrder));
       const sequential=readingOrder.every((value,index)=>!index||value>=readingOrder[index-1]);
-      if(document.body.dataset.presentation==='reading' && document.body.dataset.layout!=='board' && !sequential)throw new Error('阅读版主题顺序发生倒退，停止导出。');
+      if(((document.body.dataset.presentation==='reading' && document.body.dataset.layout!=='board') || document.body.dataset.layout==='horizontal') && !sequential)throw new Error('阅读版主题顺序发生倒退，停止导出。');
       return {source_images:images.map(image=>({natural_width:image.naturalWidth,natural_height:image.naturalHeight,width:image.getBoundingClientRect().width,height:image.getBoundingClientRect().height})),
         reading_order:{sequential,topic_fragments:readingOrder.length},
+        structure:{headings:document.querySelectorAll('#render-pages .page-heading').length,footers:document.querySelectorAll('#render-pages .page-footer').length,columns:document.querySelectorAll('#render-pages .composition-lane').length},
         text_coverage:{expected_characters:[...originalText.values()].reduce((sum,text)=>sum+Array.from(text).length,0),rendered_characters:[...renderedText.values()].reduce((sum,text)=>sum+Array.from(text).length,0),mismatched_sources:mismatchedText.length},
         image_coverage:{expected_unique_images:expectedImages.size,rendered_unique_images:renderedImages.size,missing:missingImages.length},
         topic_integrity:{expected_topics:originalTopics.length,intact_topics:intactTopics,fragmented_topics:originalTopics.length-intactTopics},
         body_font_sizes:[...renderedFonts],
         source_coverage:{expected_unique_sources:expected.size,rendered_unique_sources:actual.size,missing:missing.length}};
     });
-    const images=[],dimensions=[];
+    const images=[],dimensions=[],rasterTiles=[];
     for (let index=0;index<rendered.count;index++) {
       const locator=page.locator('.render-page').nth(index);
       const box=await locator.boundingBox();
       const filename=path.join(output,`long-${String(index+1).padStart(2,'0')}.png`);
-      await locator.screenshot({path:filename,animations:'disabled'});
-      images.push(filename);dimensions.push({width:Math.round(box.width),height:Math.ceil(box.height)});
+      let png;
+      if(rendered.layout_mode==='horizontal') {
+        // Chromium can wrap screenshot pixels beyond its texture limit. Keep
+        // each capture narrow and paint the requested columns at viewport x=0.
+        await locator.evaluate((element,height)=>{
+          const frame=document.createElement('div');frame.id='raster-frame';frame.style.cssText=`position:relative;overflow:hidden;background:white;height:${height}px`;
+          element.before(frame);frame.append(element);element.style.position='relative';element.style.margin='0';
+        },Math.ceil(box.height));
+        const tiles=[];
+        for(let offset=0;offset<Math.round(box.width);offset+=4096){
+          const width=Math.min(4096,Math.round(box.width)-offset);
+          await page.locator('#raster-frame').evaluate((frame,{width,offset})=>{frame.style.width=width+'px';frame.firstElementChild.style.left=-offset+'px';},{width,offset});
+          const tile=await page.locator('#raster-frame').screenshot({animations:'disabled'});
+          if(tile.readUInt32BE(16)!==width||tile.readUInt32BE(20)!==Math.ceil(box.height))throw new Error('横向渲染片段尺寸异常。');
+          tiles.push(tile);rasterTiles.push({offset,width,height:Math.ceil(box.height)});
+        }
+        png=stitchHorizontalPng(tiles);fs.writeFileSync(filename,png);
+      }else png=await locator.screenshot({path:filename,animations:'disabled'});
+      images.push(filename);dimensions.push({width:png.readUInt32BE(16),height:png.readUInt32BE(20)});
     }
-    process.stdout.write(JSON.stringify({images,dimensions,page_count:rendered.count,layout_mode:rendered.layout_mode,panel_heights:rendered.panel_heights,
-      blank_ratio:rendered.blank_ratio,lane_heights:rendered.lane_heights,layout_candidates:rendered.layout_candidates,...verification}));
+    process.stdout.write(JSON.stringify({images,dimensions,page_count:rendered.count,layout_mode:rendered.layout_mode,panel_heights:rendered.panel_heights,horizontal_columns:rendered.horizontal_columns,column_width:rendered.column_width,
+      blank_ratio:rendered.blank_ratio,lane_heights:rendered.lane_heights,layout_candidates:rendered.layout_candidates,raster_tiles:rasterTiles,...verification}));
   } finally { await browser.close(); }
 }
 

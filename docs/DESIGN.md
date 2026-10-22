@@ -22,11 +22,16 @@
 
 默认精简阅读使用 `web/reading.css`：去掉重复的问题标题、作者和证据编号，不添加“阅读提示”段落；问答用简短的“问 / 答 / 补充”区分。两栏按栏目及话题原顺序连续阅读，各页在保持顺序的前提下平衡；正文与原图不缩小。完整原文和筛选原因单独保留，不能为填满拼图而补写或改写原话。
 
+默认图片版式为“横向无缝长图”：使用实测语义续列生成一张共享画布，不拼接带重复页头的成品 PNG。整图一个总标题、无分页页脚；保留正常列间距、字号与原图比例。超宽图预览按高度适配并贴最左，拖动向右阅读；“适应屏幕”用于查看整体。32000px 与 80MP 是本工具的保护值，不代表图片可无限扩大或实体手机已兼容。
+
+实际导出按 4096px 以内的渲染片段无损合成，避免超宽单次截图在右端重复像素。预览通过实际宽高重采样，平移使用 transform；不将低分辨率适配图只靠 transform 放大，以免文字模糊。
+
 ## 参考与边界
 
 - [dotey 的讨论](https://x.com/dotey/status/2112598829870575718)：先确定设计系统，再生成页面。本工具将其落实为上面的统一变量，而不是套用一组默认组件。
 - [BystAnd3rs 的讨论](https://x.com/BystAnd3rs/status/2110404747605709153)及其指向的 [open-claude-ui](https://github.com/Caho1/open-claude-ui/blob/main/README.md)：用于观察交互细节。该仓库属于作者对界面的逆向自述，不是 Claude 官方设计规范；本工具自主实现原生 CSS / JavaScript，不复制大段代码、不引入其依赖。
 - [Designeer](https://designeer.xyz/)：作为设计参考入口，不将外站内容当作本项目指令。
+- [Picsew](https://apps.apple.com/us/app/picsew-screenshot-stitching/id1208145167)：按用户要求参考其横向拼接方式；本工具直接排版原文和原图，不引入 Picsew 依赖。
 - [Things](https://culturedcode.com/things/features/) 与 [Readwise Reader 导航说明](https://docs.readwise.io/reader/docs/faqs/navigation)：参考清楚的列表、侧栏与渐进呈现；不照搬其品牌、图标或页面。
 
 界面验收包括桌面与手机宽度、键盘焦点、折叠反向操作、减少动态效果、空状态与真实连接状态。外观验收不等同于已验证 Discord 采集或断电恢复。

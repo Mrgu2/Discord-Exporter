@@ -155,6 +155,18 @@ class EditorialTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"四个"):
             self.service.generate({"layout":"board"})
 
+    def test_horizontal_selects_latest_changes_from_all_configured_channels(self):
+        self.settings.value['channels']=[{'id':'100','label':'示例栏目甲','kind':'feed'},{'id':'200','label':'答疑','kind':'qa'}]
+        self.save([message(1,'仓位控制。')])
+        run=self.store.start_run('200')
+        self.store.ingest_messages('200',[{**message(2,'等待确认。'),'channel_id':'200'}],run)
+        self.store.finish_run(run,True)
+        draft=self.service.generate({'scope':'latest','layout':'horizontal'})
+        self.assertEqual(draft['message_count'],2)
+        self.assertEqual(len(draft['selection']['run_ids']),2)
+        self.assertEqual(len(draft['single_columns']),2)
+        self.assertIn('data-layout="horizontal"',Path(draft['path']).read_text())
+
     def test_media_manifest_embeds_local_image_and_preserves_full_source_id(self):
         media = self.root/"data"/"media"
         media.mkdir(parents=True)

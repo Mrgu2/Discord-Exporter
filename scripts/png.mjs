@@ -46,7 +46,10 @@ function copyPixels(tile,raw,stride,left,top){
 
 function encodePixels(first,raw,width,height){
   const header=Buffer.from(first.header);header.writeUInt32BE(width);header.writeUInt32BE(height,4);
-  return Buffer.concat([SIGNATURE,chunk('IHDR',header),...first.color.map(item=>chunk(item.type,item.data)),chunk('IDAT',zlib.deflateSync(raw,{level:6})),chunk('IEND',Buffer.alloc(0))]);
+  // This renderer's untagged Chrome captures contain sRGB samples. Label them
+  // for image viewers while preserving any color metadata supplied by a tile.
+  const color=first.color.length?first.color:[{type:'sRGB',data:Buffer.from([0])}];
+  return Buffer.concat([SIGNATURE,chunk('IHDR',header),...color.map(item=>chunk(item.type,item.data)),chunk('IDAT',zlib.deflateSync(raw,{level:6})),chunk('IEND',Buffer.alloc(0))]);
 }
 
 export function stitchHorizontalPng(buffers){

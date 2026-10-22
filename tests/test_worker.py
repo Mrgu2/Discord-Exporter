@@ -1,0 +1,139 @@
+"""Exercise the background recovery state machine without a real connection."""
+
+import copy
+import tempfile
+import unittest
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from unittest.mock import Mock, patch
+
+from discord_archive.collector import AccessDenied, AuthRequired, DiscordAPIError
+from discord_archive.settings import DEFAULT_CONFIG
+from discord_archive.store import ArchiveStore, parse_time
+from discord_archive.worker import Worker
+
+
+class FakeSettings:
+    def read(self):
+        config = copy.deepcopy(DEFAULT_CONFIG)
+        config["schedule"]["enabled"] = False
+        return config
+
+
+class NoCredentials:
+    def get(self, kind):
+        return None
+
+
+class WorkerRecoveryTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary.name)
+        self.store = ArchiveStore(self.root / "archive.sqlite3")
+        self.worker = self.new_worker()
+
+    def tearDown(self):
+        self.store.close()
+        self.temporary.cleanup()
+
+    def new_worker(self):
+        return Worker(self.store, self.root, FakeSettings(), NoCredentials(), None)
+
+    def run_one_failure(self, error):
+        self.worker.stop_event.clear()
+        self.worker.submit("capture", {"trigger": "manual"})
+
+        def capture(payload):
+            self.worker.stop_event.set()
+            raise error
+
+        with patch.object(self.worker, "capture", side_effect=capture):
+            self.worker.loop()
+
+    def test_invalid_credentials_pause_automatic_retries(self):
+        self.run_one_failure(AuthRequired(401, "Fictitious credential expired"))
+        self.assertTrue(self.worker.state["requires_attention"])
+        self.assertIsNone(self.worker.state["retry_at"])
+        self.assertEqual(self.worker.state["last_job_status"], "failed")
+        restarted = self.new_worker()
+        self.assertTrue(restarted.state["requires_attention"])
+
+    def test_missing_permissions_pause_automatic_retries(self):
+        self.run_one_failure(AccessDenied(403, "Fictitious permission denied"))
+        self.assertTrue(self.worker.state["requires_attention"])
+        self.assertIsNone(self.worker.state["retry_at"])
+
+    def test_partial_permissions_keep_worker_online_and_automatic_capture_available(self):
+        config = FakeSettings().read()
+        config["channels"] = [{"id":"100"},{"id":"200"}]
+        self.worker.settings = Mock()
+        self.worker.settings.read.return_value = config
+        self.worker.credentials = Mock()
+        self.worker.credentials.get.return_value = "synthetic-test-credential"
+
+        class PartlyReadableClient:
+            def list_messages(inner_self, channel_id, before=None):
+                if channel_id == "100":
+                    raise AccessDenied(403,"Fictitious missing access")
+                return [{"id":"300","channel_id":"200","author":{"id":"400"},"content":"Fictitious preserved message","timestamp":"2026-10-22T14:00:00Z"}]
+
+        capture = self.worker.capture
+        def one_capture(payload):
+            try:
+                return capture(payload)
+            finally:
+                self.worker.stop_event.set()
+        self.worker.submit("capture", {"trigger":"manual"})
+        with patch("discord_archive.worker.DiscordClient",return_value=PartlyReadableClient()),patch.object(self.worker,"capture",side_effect=one_capture):
+            self.worker.loop()
+        self.assertEqual(self.worker.state["last_job_status"],"partial")
+        self.assertEqual(self.worker.state["permission_denied_channels"],["100"])
+        self.assertIsNotNone(self.worker.state["last_warning"])
+        self.assertFalse(self.worker.state["requires_attention"])
+        self.assertIsNone(self.worker.state["offline_since"])
+        self.assertIsNone(self.worker.state["retry_at"])
+        self.assertIsNone(self.worker.state["last_error"])
+        self.assertIsNotNone(self.worker.state["last_success_at"])
+        self.assertEqual(self.store.list_runs("100")[0]["status"],"failed")
+        self.assertEqual(self.store.list_runs("200")[0]["status"],"success")
+        restarted = self.new_worker()
+        self.assertFalse(restarted.state["requires_attention"])
+        self.assertEqual(restarted.state["permission_denied_channels"],["100"])
+
+    def test_network_failures_continue_with_bounded_backoff(self):
+        first_delay = None
+        for attempt in range(8):
+            before = datetime.now(timezone.utc)
+            self.run_one_failure(DiscordAPIError(0, "Fictitious outage"))
+            delay = (parse_time(self.worker.state["retry_at"]) - before).total_seconds()
+            if first_delay is None:
+                first_delay = delay
+            self.assertGreaterEqual(delay, 29)
+            self.assertLessEqual(delay, 1802)
+            self.assertFalse(self.worker.state["requires_attention"])
+            self.assertEqual(self.worker.state["failures"], attempt + 1)
+        self.assertGreater(delay, first_delay)
+        restarted = self.new_worker()
+        self.assertEqual(restarted.state["failures"], 8)
+        self.assertIsNotNone(restarted.state["offline_since"])
+
+    def test_long_rate_limit_survives_restart_without_early_request(self):
+        before = datetime.now(timezone.utc)
+        self.run_one_failure(DiscordAPIError(429, "Fictitious limit", retry_after=600))
+        retry_at = parse_time(self.worker.state["retry_at"])
+        self.assertGreaterEqual(retry_at, before + timedelta(seconds=600))
+        restarted = self.new_worker()
+        self.assertGreaterEqual(parse_time(restarted.state["retry_at"]), retry_at)
+        self.assertFalse(restarted.state["requires_attention"])
+
+    def test_reset_after_local_reconfiguration_clears_attention(self):
+        self.run_one_failure(AuthRequired(401, "Fictitious credential expired"))
+        self.worker.reset_attention()
+        self.assertFalse(self.worker.state["requires_attention"])
+        self.assertEqual(self.worker.state["failures"], 0)
+        self.assertIsNone(self.worker.state["last_error"])
+        self.assertIsNotNone(self.worker.state["retry_at"])
+
+
+if __name__ == "__main__":
+    unittest.main()

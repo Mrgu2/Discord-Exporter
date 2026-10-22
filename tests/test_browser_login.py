@@ -47,6 +47,8 @@ class BrowserLoginTests(unittest.TestCase):
         self.assertEqual(command[2],str(self.root/"data"/"browser-profile"))
         self.assertEqual((self.root/"data"/"browser-profile").stat().st_mode&0o777,0o700)
         self.assertTrue(self.runner.call_args.kwargs["capture_output"])
+        self.assertEqual(self.runner.call_args.kwargs["timeout"],570)
+        self.assertEqual(command[3],"565000")
 
     def test_cancelled_and_timeout_preserve_existing_credentials(self):
         for status in ("cancelled","timeout"):

@@ -4,9 +4,18 @@ import json
 import os
 from pathlib import Path
 from urllib.parse import urlsplit
-from urllib.request import Request, urlopen
+from urllib.request import Request, HTTPRedirectHandler, build_opener
+
+from .assets import allowed_media_url, iter_message_assets
 
 from .settings import atomic_json
+
+
+class _CDNRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not allowed_media_url(newurl):
+            raise ValueError('unsupported asset host')
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
 class MediaArchive:
@@ -20,50 +29,55 @@ class MediaArchive:
     def archive_page(self, channel_id, run_id, messages, download=True):
         failures = 0
         visited = set()
-        def save(message):
+        def save(message, channel):
             nonlocal failures
-            identity = str(message.get('id', ''))
-            if identity in visited:
+            raw = message.get('raw') if isinstance(message.get('raw'), dict) else message
+            channel = str(message.get('channel_id') or raw.get('channel_id') or channel)
+            identity = str(message.get('message_id') or raw.get('id', ''))
+            if (channel, identity) in visited:
                 return
-            visited.add(identity)
-            for attachment in message.get('attachments', []):
-                key = f"{channel_id}/{identity}/{attachment.get('id', attachment.get('filename', 'asset'))}"
+            visited.add((channel, identity))
+            for attachment in iter_message_assets(message):
+                key = f"{channel}/{identity}/{attachment['id']}"
                 existing = self.manifest.get(key, {})
                 if existing.get('status') == 'saved' and (self.directory / existing['file']).is_file():
                     continue
-                entry = {'channel_id': channel_id, 'message_id': identity, 'filename': attachment.get('filename', ''), 'run_id': run_id}
+                entry = {'channel_id': channel, 'message_id': identity, 'filename': attachment.get('filename', ''), 'run_id': run_id,
+                         'content_type': attachment.get('content_type'), 'is_image': attachment.get('is_image'), 'source_type': attachment.get('source_type')}
                 try:
                     if not download:
                         entry['status'] = 'not_requested'
                     else:
-                        url = attachment.get('url', '')
-                        parts = urlsplit(url)
-                        if parts.scheme != 'https' or parts.hostname not in ('cdn.discordapp.com', 'media.discordapp.net', 'cdn.discordapp.net'):
+                        url = attachment.get('download_url', '')
+                        if not allowed_media_url(url):
                             raise ValueError('unsupported asset host')
                         if int(attachment.get('size', 0)) > 50 * 1024 * 1024:
                             raise ValueError('asset exceeds 50MB limit')
                         suffix = Path(attachment.get('filename', 'asset')).suffix[:12]
+                        if attachment.get('is_image') and not suffix:
+                            suffix = {'image/jpeg':'.jpg','image/gif':'.gif','image/webp':'.webp','image/avif':'.avif','image/bmp':'.bmp'}.get(attachment.get('content_type'), '.png')
                         filename = hashlib.sha256(key.encode()).hexdigest() + suffix
                         target = self.directory / filename
-                        with urlopen(Request(url, headers={'User-Agent': 'DiscordArchiveLocal/1.0'}), timeout=20) as response:
-                            raw = response.read(50 * 1024 * 1024 + 1)
-                        if len(raw) > 50 * 1024 * 1024:
+                        with build_opener(_CDNRedirect()).open(Request(url, headers={'User-Agent': 'DiscordArchiveLocal/1.0'}), timeout=20) as response:
+                            payload = response.read(50 * 1024 * 1024 + 1)
+                        if len(payload) > 50 * 1024 * 1024:
                             raise ValueError('asset exceeds 50MB limit')
                         temp = target.with_suffix(target.suffix + '.part')
                         with open(temp, 'wb') as handle:
-                            handle.write(raw)
+                            handle.write(payload)
                         os.replace(temp, target)
-                        entry.update(status='saved', file=filename, sha256=hashlib.sha256(raw).hexdigest(), bytes=len(raw))
+                        entry.update(status='saved', file=filename, sha256=hashlib.sha256(payload).hexdigest(), bytes=len(payload))
                 except Exception:
                     entry['status'] = 'failed'
                     entry['error'] = '附件未能保存，相关条件需核对'
                     failures += 1
                 self.manifest[key] = entry
-            nested = message.get('referenced_message')
+            nested = raw.get('referenced_message') or raw.get('referencedMessage')
             if isinstance(nested, dict):
-                save(nested)
+                reference = raw.get('message_reference') or {}
+                save(nested, reference.get('channel_id') or channel)
         for message in messages:
-            save(message)
+            save(message, channel_id)
         atomic_json(self.path, self.manifest)
         return failures
 

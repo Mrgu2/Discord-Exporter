@@ -22,10 +22,10 @@ _connect_lock = threading.Lock()
 
 
 class BrowserLogin:
-    def __init__(self, root, credentials, *, client_factory=None, runner=None, timeout=180):
+    def __init__(self, root, credentials, *, client_factory=None, runner=None, timeout=600):
         self.root,self.credentials = Path(root),credentials
         self.client_factory,self.runner = client_factory,runner
-        self.timeout = max(1,min(180,float(timeout)))
+        self.timeout = max(1,min(600,float(timeout)))
 
     @staticmethod
     def _result(status,message,**extra):
@@ -76,7 +76,7 @@ class BrowserLogin:
             profile.mkdir(parents=True,exist_ok=True,mode=0o700)
             os.chmod(profile,0o700)
             script = Path(__file__).resolve().parent.parent/"scripts"/"connect_browser.mjs"
-            process_budget = min(150,max(1,self.timeout-30))
+            process_budget = min(570,max(1,self.timeout-30))
             browser_wait_ms = max(250,int((process_budget-5)*1000))
             try:
                 # This stdout may contain the candidate credential. It is never

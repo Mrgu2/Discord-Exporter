@@ -81,13 +81,19 @@ class FakeDiscordTransport:
     def __init__(self):
         self.round = 1
         self.calls = 0
+        self.metadata_calls = 0
 
     def __call__(self,method,url,headers):
         location = urlsplit(url)
         match = re.fullmatch(r"/api/v10/channels/(10[1-5])/messages",location.path)
-        require(method == "GET" and location.hostname == "discord.com" and match is not None,"Unexpected synthetic transport request")
+        metadata_match = re.fullmatch(r"/api/v10/channels/(10[1-5])",location.path)
+        require(method == "GET" and location.hostname == "discord.com" and (match is not None or metadata_match is not None),"Unexpected synthetic transport request")
         require(headers.get("Authorization") == "synthetic-workflow-only-credential","Unexpected verification credential")
         self.calls += 1
+        if metadata_match:
+            self.metadata_calls += 1
+            channel = metadata_match.group(1)
+            return 200,{}, {"id":channel,"guild_id":"8000","name":next(row["label"] for row in CHANNELS if row["id"] == channel)}
         channel = match.group(1)
         if channel != "105":
             label = next(row["label"] for row in CHANNELS if row["id"] == channel)
@@ -200,8 +206,14 @@ def verify():
             counts = app.store.summary()
             require(counts["message_count"] == 9 and counts["version_count"] == 10,"Repeated HTTP captures did not deduplicate or retain edits correctly")
 
-            json_request("/api/drafts","POST",{"scope":"latest","layout":"collage","mode":"evidence","title":"五频道两轮 · 虚构流程验收"},expected=202)
-            draft = wait_for_job(lambda result:result.get("scope") == "latest" and bool(result.get("evidence_url")))
+            json_request("/api/drafts","POST",{"scope":"latest","layout":"collage","mode":"evidence","title":"五频道两轮 · 虚构增量验收"},expected=202)
+            incremental = wait_for_job(lambda result:result.get("scope") == "latest" and bool(result.get("evidence_url")))
+            delta_evidence,_ = json_request(incremental["evidence_url"])
+            delta_ids = {message["message_id"] for panel in delta_evidence["panels"] for message in panel["messages"]}
+            require(incremental["message_count"] == 3 and delta_ids == {"10101","10504","10505"},"Latest-round draft repeated unchanged messages or lost an edit/new contribution")
+            require(len(delta_evidence["panels"]) == 2,"Unchanged channels were not omitted from the incremental draft")
+            json_request("/api/drafts","POST",{"scope":"day","date":"2026-10-21","layout":"collage","mode":"evidence","title":"五频道两轮 · 虚构交易日验收"},expected=202)
+            draft = wait_for_job(lambda result:result.get("scope") == "day" and bool(result.get("evidence_url")))
             require(Path(draft["path"]).is_relative_to(root),"Draft output escaped the isolated root")
             document,_ = request(draft["url"])
             manuscript,_ = request(draft["manuscript_url"])
@@ -209,6 +221,9 @@ def verify():
             for quote in (QUESTION,ANSWER,FOLLOWUP,SUPPLEMENT):
                 require(quote in document.decode() and quote in manuscript.decode(),"An original question or answer was missing from HTML/Markdown")
             require(len(evidence["panels"]) == 5 and draft["message_count"] == 7,"The five-channel draft lost target-author messages")
+            sources = [source for context in evidence["contexts"] for source in context["sources"]]
+            require(sources and all(source["url"].startswith("https://discord.com/channels/8000/") for source in sources),"A guild source link incorrectly used the direct-message route")
+            require(transport.metadata_calls == 5,"Channel guild metadata was not cached across capture rounds")
             require(b'/media/synthetic.png' in document,"Saved original image was not included in the draft")
             downloaded_media,_ = request("/media/synthetic.png")
             require(downloaded_media == raw_png,"Local media download changed the saved original")
@@ -236,7 +251,7 @@ def verify():
             json_request("/api/connect-browser","POST",{},phone=True,cookie=cookie,expected=403)
             require(Path(app.store.db_path).is_relative_to(root) and app.worker.root == root and app.settings.root == root,"A persistent component used the user's workspace data")
             return {"status":"passed","temporary_root":str(root),"server_url":base,"server_stopped":True,
-                "source_counts":{"channels":5,"rounds":2,"messages":counts["message_count"],"versions":counts["version_count"],"target_messages":draft["message_count"],"fake_api_requests":transport.calls},
+                "source_counts":{"channels":5,"rounds":2,"messages":counts["message_count"],"versions":counts["version_count"],"target_messages":draft["message_count"],"latest_round_target_messages":incremental["message_count"],"fake_api_requests":transport.calls,"metadata_requests":transport.metadata_calls},
                 "draft_path":draft["path"],"images":[str(root/path.lstrip("/")) for path in rendered["images"]],
                 "mobile_image_count":len(all_images)-len(rendered["images"]),"image_dimensions":dimensions,
                 "phone_auth":{"unauthenticated":401,"paired":200,"remote_browser_connect":403},

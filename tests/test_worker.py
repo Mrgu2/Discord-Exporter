@@ -100,6 +100,67 @@ class WorkerRecoveryTests(unittest.TestCase):
         self.assertFalse(restarted.state["requires_attention"])
         self.assertEqual(restarted.state["permission_denied_channels"],["100"])
 
+    def test_member_example_is_resolved_through_history_exact_match(self):
+        config = FakeSettings().read()
+        config.update(channels=[{'id':'100','label':'测试频道'}], target_author_id='',
+                      target_message_url='https://discord.com/channels/10/100/300')
+        self.worker.settings = Mock()
+        self.worker.settings.read.side_effect = lambda: copy.deepcopy(config)
+        self.worker.settings.update.side_effect = lambda change: (config.update(change) or copy.deepcopy(config))
+        self.worker.credentials = Mock()
+        self.worker.credentials.get.return_value = 'fictitious-local-credential'
+        self.worker.state['active_job'] = {'type':'capture','id':'fictitious-job'}
+        example = {'id':'300','channel_id':'100','author':{'id':'400'},
+                   'timestamp':'2026-10-22T14:00:00Z','content':'虚构的群主示例'}
+
+        class MemberClient:
+            def get(inner_self, path, params=None):
+                self.assertEqual(path, '/channels/100/messages')
+                self.assertEqual(params, {'around':'300','limit':1})
+                return [example]
+
+            def list_messages(inner_self, channel_id, before=None):
+                return [example]
+
+        with patch('discord_archive.worker.DiscordClient', return_value=MemberClient()):
+            result = self.worker.capture({'trigger':'manual'})
+        self.assertEqual(result['status'], 'success')
+        self.assertEqual(config['target_author_id'], '400')
+        self.assertEqual(self.store.channel_status('100')['guild_id'], '10')
+        self.assertIsNone(self.worker.state['target_resolution_warning'])
+        self.assertIn('测试频道', self.worker.state['active_job']['message'])
+        self.assertIn('1 条', self.worker.state['active_job']['message'])
+
+    def test_missing_or_forbidden_example_does_not_guess_author_or_stop_archive(self):
+        for forbidden in (False, True):
+            with self.subTest(forbidden=forbidden):
+                config = FakeSettings().read()
+                config.update(channels=[{'id':'100'}],target_author_id='',
+                              target_message_url='https://discord.com/channels/10/100/300')
+                self.worker.settings = Mock()
+                self.worker.settings.read.return_value = config
+                self.worker.credentials = Mock()
+                self.worker.credentials.get.return_value = 'fictitious-local-credential'
+                neighbor = {'id':'301','channel_id':'100','author':{'id':'999'},
+                            'timestamp':'2026-10-22T14:00:00Z','content':'虚构邻近消息，不是示例作者'}
+
+                class MemberClient:
+                    def get(inner_self, path, params=None):
+                        if forbidden:
+                            raise AccessDenied(403, 'Fictitious unreadable example')
+                        return [neighbor]
+
+                    def list_messages(inner_self, channel_id, before=None):
+                        return [neighbor]
+
+                with patch('discord_archive.worker.DiscordClient', return_value=MemberClient()):
+                    result = self.worker.capture({'trigger':'manual'})
+                self.assertEqual(result['status'], 'success')
+                self.worker.settings.update.assert_not_called()
+                self.assertEqual(config['target_author_id'], '')
+                self.assertIsNotNone(self.worker.state['target_resolution_warning'])
+                self.assertIn('示例消息', self.worker.state['last_warning'])
+
     def test_network_failures_continue_with_bounded_backoff(self):
         first_delay = None
         for attempt in range(8):

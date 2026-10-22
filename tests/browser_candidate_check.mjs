@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {requestCandidate,validSessionCandidate} from '../scripts/connect_browser.mjs';
+import {requestCandidate,validSessionCandidate,safePageState} from '../scripts/connect_browser.mjs';
 
 const fictitious='fictitious-session-not-a-real-credential';
 let reads=0;
@@ -14,4 +14,9 @@ assert.equal(reads,before,'Unrelated origins and login forms must not be inspect
 assert.equal(validSessionCandidate('short'),null);
 assert.equal(validSessionCandidate('fictitious credential contains spaces'),null);
 assert.equal(validSessionCandidate(fictitious),fictitious);
+assert.equal(safePageState('https://discord.com/login?redirect_to=private'),'discord_login');
+assert.equal(safePageState('https://discord.com/channels/123/456'),'discord_channels');
+assert.equal(safePageState('about:blank'),'blank');
+assert.equal(safePageState('https://elsewhere.invalid/private'),'other_site');
+assert.ok(!JSON.stringify(safePageState('https://discord.com/channels/123/456')).includes('123'));
 console.log('Scoped browser session checks passed; no browser or real credential was accessed.');

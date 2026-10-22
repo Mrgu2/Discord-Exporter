@@ -15,6 +15,7 @@ from discord_archive.collector import (
     DiscordClient,
 )
 from discord_archive.scheduler import day_bounds, due, market_day
+from discord_archive.context import source_for
 from discord_archive.settings import DEFAULT_CONFIG
 from discord_archive.store import ArchiveStore
 
@@ -54,6 +55,15 @@ class DiscordClientReliabilityTests(unittest.TestCase):
         self.assertIn("limit=100", url)
         self.assertNotIn("test-token-not-a-real-credential", url)
         self.assertEqual(headers.get("Authorization"), "test-token-not-a-real-credential")
+
+    def test_channel_metadata_is_read_only_and_cached(self):
+        client,transport,_ = self.make_client((200,{}, {"id":"456","guild_id":"8000","name":"synthetic"}))
+        first = client.get_channel("456")
+        first["guild_id"] = "mutated-by-caller"
+        self.assertEqual(client.get_channel("456")["guild_id"],"8000")
+        self.assertEqual(len(transport.calls),1)
+        self.assertEqual(transport.calls[0][0],"GET")
+        self.assertTrue(transport.calls[0][1].endswith("/channels/456"))
 
     def test_rate_limit_waits_for_json_retry_after_then_recovers(self):
         client, transport, sleeps = self.make_client(
@@ -253,6 +263,55 @@ class CaptureReliabilityTests(unittest.TestCase):
         self.assertEqual(calls, ["456"])
         self.assertEqual(self.store.get_cursor("456"), "900")
         self.assertEqual(self.store.list_runs("789"), [])
+
+    def test_channel_guild_is_persisted_for_source_links_and_reused_next_round(self):
+        metadata_calls = []
+
+        class MetadataClient:
+            def get_channel(inner_self,channel_id):
+                metadata_calls.append(channel_id)
+                return {"id":channel_id,"guild_id":"8000","name":"actual-channel"}
+            def list_messages(inner_self,channel_id,before=None):
+                return [self.message(1200)]
+
+        CaptureService(self.store,MetadataClient(),[{"id":"456","label":"configured-title"}],clock=lambda:self.NOW).capture()
+        archived = self.store.get_message("456","1200")
+        self.assertEqual(source_for(self.store,archived)["url"],"https://discord.com/channels/8000/456/1200")
+        self.assertEqual(self.store.list_channels()[0]["name"],"configured-title")
+        # A fresh client also uses the persisted guild cache on the next round.
+        CaptureService(self.store,MetadataClient(),["456"],clock=lambda:self.NOW).capture()
+        self.assertEqual(metadata_calls,["456"])
+
+    def test_metadata_forbidden_keeps_cursor_and_continues_other_channels(self):
+        message_calls = []
+
+        class MetadataClient:
+            def get_channel(inner_self,channel_id):
+                if channel_id == "456":
+                    raise AccessDenied(403,"Fictitious metadata access denied")
+                return {"id":channel_id,"guild_id":"8000"}
+            def list_messages(inner_self,channel_id,before=None):
+                message_calls.append(channel_id)
+                return []
+
+        result = CaptureService(self.store,MetadataClient(),["456","789"],clock=lambda:self.NOW).capture()
+        self.assertEqual(result["status"],"partial")
+        self.assertEqual(result["permission_denied_channels"],["456"])
+        self.assertEqual(message_calls,["789"])
+        self.assertEqual(self.store.get_cursor("456"),"900")
+        self.assertEqual(self.store.list_runs("456")[0]["status"],"failed")
+        self.assertEqual(self.store.channel_status("789")["guild_id"],"8000")
+
+    def test_guild_metadata_without_guild_id_is_not_marked_success(self):
+        class IncompleteMetadataClient:
+            def get_channel(inner_self,channel_id):
+                return {"id":channel_id,"type":0}
+            def list_messages(inner_self,channel_id,before=None):
+                raise AssertionError("Incomplete guild metadata must be rejected first")
+        with self.assertRaises(DiscordAPIError):
+            CaptureService(self.store,IncompleteMetadataClient(),["456"],clock=lambda:self.NOW).capture()
+        self.assertEqual(self.store.list_runs("456")[0]["status"],"failed")
+        self.assertEqual(self.store.get_cursor("456"),"900")
 
     def test_lock_prevents_manual_and_scheduled_services_running_together(self):
         entered, release = threading.Event(), threading.Event()

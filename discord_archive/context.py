@@ -38,7 +38,7 @@ def build_context_for_seed(store: ArchiveStore, channel_id: str, message_id: str
     archived_seed = _index["messages"].get((str(channel_id),str(message_id)))
     seed = dict(archived_seed) if archived_seed else None
     if seed is None:
-        raise ValueError("Seed message is absent from the local archive")
+        raise ValueError("本地归档中没有这条发言，无法还原上下文")
     seed["evidence_relation"] = "target_author_seed"
     ceiling = parse_time(until)
     chain, missing, warnings = [], [], []
@@ -51,7 +51,7 @@ def build_context_for_seed(store: ArchiveStore, channel_id: str, message_id: str
         referenced_channel = current.get("reply_to_channel_id") or current["channel_id"]
         reference_key = str(referenced_channel), str(referenced_id)
         if reference_key in visited:
-            warnings.append("Reply cycle detected; expansion stopped.")
+            warnings.append("发现循环回复引用，已停止继续展开。")
             break
         visited.add(reference_key)
         archived_original = _index["messages"].get(reference_key)
@@ -59,14 +59,14 @@ def build_context_for_seed(store: ArchiveStore, channel_id: str, message_id: str
         if original is None:
             missing.append({"channel_id":reference_key[0],"message_id":reference_key[1],
                 "referenced_by":source_for(store,current,_index["channels"]),"reason":"not_in_local_archive",
-                "label":"原问题未保存，上下文缺失；不可依据邻近消息补写。"})
+                "label":"被回复的原消息未保存在本地，上下文缺失；不可根据邻近消息补写。"})
             break
         original["evidence_relation"] = "explicit_reply_ancestor"
         chain.append(original)
         current = original
     else:
         if current.get("reply_to_message_id"):
-            warnings.append(f"Reply chain limited to {max_reply_depth} ancestors.")
+            warnings.append(f"回复链已达到 {max_reply_depth} 层展开上限，更早的上下文未继续展开。")
     chain.reverse()
 
     # Read connected channels so a cross-channel reply or actual thread can be
@@ -93,7 +93,7 @@ def build_context_for_seed(store: ArchiveStore, channel_id: str, message_id: str
             if len(followups) >= max_followups:
                 break
     if queue:
-        warnings.append(f"Reply followups limited to {max_followups} messages.")
+        warnings.append(f"后续回复已达到 {max_followups} 条展开上限。")
 
     # Thread membership is structural evidence, but not proof that every thread
     # message answers this specific seed. Keep that relation explicit.
@@ -110,7 +110,7 @@ def build_context_for_seed(store: ArchiveStore, channel_id: str, message_id: str
                 if seed_time and created and created < seed_time:
                     continue
                 if len(followups) >= max_followups:
-                    warnings.append(f"Thread followups limited to {max_followups} messages.")
+                    warnings.append(f"同一线程的后续对话已达到 {max_followups} 条展开上限，部分内容未继续展开。")
                     break
                 item = dict(message)
                 item["evidence_relation"] = "same_thread_membership"
@@ -193,20 +193,22 @@ def build_context(store: ArchiveStore, target_author_id: str, channel_id: str | 
                   **options) -> dict[str, Any]:
     """Select target-author seeds, then recover their evidenced local context."""
     if not target_author_id:
-        raise ValueError("target_author_id is required")
-    seeds = store.list_messages(channel_id=channel_id,author_id=str(target_author_id),run_id=run_id,
-        since=since,until=until,include_snapshots=False)
+        raise ValueError("请先指定要整理的发言人")
+    if run_id is not None:
+        seeds = store.list_run_changes(run_id,channel_id=channel_id,author_id=str(target_author_id),since=since,until=until)
+    else:
+        seeds = store.list_messages(channel_id=channel_id,author_id=str(target_author_id),
+            since=since,until=until,include_snapshots=False)
     index = _make_index(store,as_of_run_id=run_id,until=until)
     items = [build_context_for_seed(store,message["channel_id"],message["message_id"],until=until,_index=index,**options)
         for message in seeds]
     missing_keys = {(item["channel_id"],item["message_id"]) for context in items for item in context["missing_context"]}
     warnings = list(dict.fromkeys(warning for item in items for warning in item["warnings"]))
     if missing_keys:
-        warnings.append(f"{len(missing_keys)} referenced messages are not in the local archive; no text was inferred.")
-    if not seeds:
-        warnings.append("No direct target-author messages match the selected period or run.")
+        warnings.append(f"有 {len(missing_keys)} 条被引用消息未保存在本地，相关上下文缺失；未推断或补写原文。")
     return {"target_author_id":str(target_author_id),"channel_id":channel_id,"run_id":run_id,
         "since":since,"until":until,"seeds":seeds,"items":items,"warnings":warnings,
+        "seed_selection":"run_changes" if run_id is not None else "date_range_full",
         "stats":{"seed_count":len(seeds),"missing_context_count":len(missing_keys),
             "linked_context_count":sum(bool(item["reply_chain"]) for item in items),
             "followup_count":sum(len(item["followups"]) for item in items)}}

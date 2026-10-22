@@ -14,6 +14,7 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable
+from urllib.parse import unquote_plus, urlsplit, urlunsplit
 
 
 def utc_now() -> str:
@@ -48,6 +49,35 @@ def _snowflake_time(message_id: str) -> str | None:
         return iso_time(datetime.fromtimestamp(milliseconds / 1000, timezone.utc))
     except (ValueError, OverflowError, OSError):
         return None
+
+
+def _attachment_url_for_hash(value: str) -> str:
+    """Ignore only expiring Discord attachment signatures, not media identity."""
+    try:
+        parts = urlsplit(value)
+    except ValueError:
+        return value
+    if parts.scheme != "https" or parts.hostname not in {
+        "cdn.discordapp.com", "media.discordapp.net", "cdn.discordapp.net"
+    } or not parts.path.startswith("/attachments/"):
+        return value
+    # Preserve all non-signature query fields byte-for-byte and in order. In
+    # particular, external URLs, image transforms, paths and filenames retain
+    # their normal versioning behavior.
+    fields = parts.query.split("&")
+    retained = [field for field in fields if unquote_plus(field.partition("=")[0]) not in {"ex","is","hm"}]
+    if len(retained) == len(fields):
+        return value
+    return urlunsplit((parts.scheme,parts.netloc,parts.path,"&".join(retained),parts.fragment))
+
+
+def _attachments_for_hash(value: Any) -> Any:
+    if isinstance(value,list):
+        return [_attachments_for_hash(item) for item in value]
+    if isinstance(value,dict):
+        return {key:(_attachment_url_for_hash(item) if key in {"url","proxy_url","proxyUrl"} and isinstance(item,str)
+            else _attachments_for_hash(item)) for key,item in value.items()}
+    return value
 
 
 def normalize_message(raw: dict[str, Any], channel_id: str, *, source: str = "discord_api") -> dict[str, Any]:
@@ -87,6 +117,8 @@ def normalize_message(raw: dict[str, Any], channel_id: str, *, source: str = "di
     substance = {key: normalized[key] for key in (
         "content", "edited_at", "reply_to_message_id", "reply_to_channel_id", "attachments", "embeds", "stickers"
     )}
+    for key in ("attachments","embeds","stickers"):
+        substance[key] = _attachments_for_hash(substance[key])
     normalized["version_hash"] = hashlib.sha256(_json(substance).encode("utf-8")).hexdigest()
     return normalized
 
@@ -225,6 +257,15 @@ class ArchiveStore:
                 visited.add(marker)
                 self._ensure_channel(db, channel, now=now)
                 previous = db.execute("SELECT * FROM messages WHERE channel_id=? AND message_id=?", (channel, message)).fetchone()
+                if previous and normalized["version_hash"] != previous["version_hash"]:
+                    # Older archives hashed complete signed URLs. Re-evaluate
+                    # their untouched raw object under the current rules and
+                    # retain its established hash if only signatures changed.
+                    # This avoids a one-time false edit and keeps prior runs'
+                    # version references valid without a schema/data migration.
+                    previous_semantic = normalize_message(json.loads(previous["raw_json"]),channel,source=previous["source"])
+                    if previous_semantic["version_hash"] == normalized["version_hash"]:
+                        normalized["version_hash"] = previous["version_hash"]
                 stats["reference_snapshots" if snapshot else "seen"] += 1
                 stats["inserted"] += int(previous is None)
                 raw_json, normalized_json = _json(raw), _json(normalized)
@@ -410,6 +451,43 @@ class ArchiveStore:
                         message["as_of_run_id"] = selected_run
             if not include_snapshots:
                 result = [message for message in result if not message["is_reference_snapshot"]]
+            return result
+
+    def list_run_changes(self, run_id: int, *, author_id: str | None = None,
+                         channel_id: str | None = None, since: Any = None,
+                         until: Any = None) -> list[dict[str, Any]]:
+        """Return new/edited direct messages against this channel's last success.
+
+        Collection rounds deliberately overlap for reliability. Observation in
+        a round is therefore different from a new contribution in that round.
+        Failed attempts never establish a manuscript baseline, even if their
+        partial pages already saved a message or an edit.
+        """
+        with self._lock:
+            run = self.get_run(run_id)
+            if not run:
+                raise ValueError("Unknown run_id")
+            if channel_id is not None and str(channel_id) != run["channel_id"]:
+                return []
+            previous = self.conn.execute("""SELECT run_id FROM runs WHERE channel_id=?
+                AND status='success' AND run_id<? ORDER BY run_id DESC LIMIT 1""",
+                (run["channel_id"],run_id)).fetchone()
+            baseline_run_id = previous["run_id"] if previous else None
+            baseline = {}
+            if baseline_run_id is not None:
+                baseline = {row["message_id"]:row["version_hash"] for row in self.conn.execute("""
+                    SELECT message_id,version_hash FROM run_messages WHERE run_id=?
+                    AND channel_id=? AND is_reference_snapshot=0""", (baseline_run_id,run["channel_id"]))}
+            messages = self.list_messages(channel_id=run["channel_id"],author_id=author_id,
+                run_id=run_id,since=since,until=until,include_snapshots=False)
+            result = []
+            for message in messages:
+                old_hash = baseline.get(message["message_id"])
+                if old_hash is not None and old_hash == message["version_hash"]:
+                    continue
+                message["change_type"] = "edited" if message["message_id"] in baseline else "new"
+                message["baseline_run_id"] = baseline_run_id
+                result.append(message)
             return result
 
     def list_channels(self) -> list[dict[str, Any]]:

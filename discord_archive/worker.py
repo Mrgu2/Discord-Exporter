@@ -33,6 +33,8 @@ class Worker:
             'permission_denied_channels': previous.get('permission_denied_channels', []), 'last_warning': previous.get('last_warning'),
         }
         self.media = MediaArchive(root)
+        if self.drafts is not None:
+            self.drafts.media = self.media
         interrupted = self.store.recover_interrupted_runs('服务中断后自动恢复；上次成功位置保持不变')
         if interrupted or previous.get('active_job'):
             self.state.update(offline_since=previous.get('last_heartbeat') or utc_now(), retry_at=utc_now(), last_error='上次任务被中断，准备补采')
@@ -89,19 +91,38 @@ class Worker:
             raise ValueError('请先设置需要保存的频道')
         client = DiscordClient(token)
         location = message_location(config.get('target_message_url', ''))
+        self.state['target_resolution_warning'] = None
         if not config.get('target_author_id') and location:
             try:
-                message = client.get(f'/channels/{location[1]}/messages/{location[2]}')
-                config = self.settings.update({'target_author_id': str(message['author']['id'])})
-                self.store.ensure_channel(location[1], guild_id=location[0])
+                # The single-message endpoint rejects ordinary member accounts
+                # (Discord code 20002). Locate the exact example through the
+                # same history endpoint used for the user's visible messages.
+                messages = client.get(f'/channels/{location[1]}/messages', {'around': location[2], 'limit': 1})
+                if not isinstance(messages, list):
+                    raise DiscordAPIError(0, '示例消息响应异常，未更改答疑人')
+                message = next((row for row in messages if isinstance(row, dict) and str(row.get('id')) == location[2]), None)
+                author_id = str((message.get('author') or {}).get('id', '')) if message else ''
+                if author_id.isdigit():
+                    config = self.settings.update({'target_author_id': author_id})
+                    self.store.ensure_channel(location[1], guild_id=location[0])
+                else:
+                    self.state['target_resolution_warning'] = '未找到示例消息，请更新群主的一条发言链接；当前仍会保存频道内容。'
             except DiscordAPIError as exc:
-                if exc.status != 404:
+                if exc.status not in (403, 404):
                     raise
                 # A deleted example must not stop saving messages still visible.
-                self.state['target_resolution_warning'] = '示例消息已删除，请从仍可见的群主发言填写作者 ID'
+                self.state['target_resolution_warning'] = '示例消息当前无法读取，请更新群主的一条发言链接；其他可读频道仍会保存。'
         snapshot_dir = self.root / 'data' / 'snapshots'
         snapshot_dir.mkdir(parents=True, exist_ok=True)
+        page_counts = {}
+        channel_labels = {row['id']: row.get('label') or '频道' for row in channels}
         def archive_page(channel_id, run_id, messages):
+            page_counts[channel_id] = page_counts.get(channel_id, 0) + len(messages)
+            with self.lock:
+                active = self.state.get('active_job')
+                if active and active.get('type') == 'capture':
+                    active['message'] = f'正在保存{channel_labels.get(channel_id, "频道")} · 已读取 {page_counts[channel_id]} 条，正在保存附件'
+                self.persist()
             with open(snapshot_dir / f'{run_id}-{channel_id}.ndjson', 'a') as handle:
                 for message in messages:
                     handle.write(json.dumps(message, ensure_ascii=False) + '\n')
@@ -110,7 +131,8 @@ class Worker:
         result = CaptureService(self.store, client, channels, on_page=archive_page).capture(payload.get('trigger', 'manual'))
         with self.lock:
             self.state.update(last_success_at=utc_now(), last_online_at=utc_now(), offline_since=None, retry_at=None, rate_limit_until=None, failures=0, requires_attention=False, last_error=None)
-            self.state.update(permission_denied_channels=result.get('permission_denied_channels', []), last_warning=result.get('warning'))
+            warnings = [value for value in (self.state.get('target_resolution_warning'), result.get('warning')) if value]
+            self.state.update(permission_denied_channels=result.get('permission_denied_channels', []), last_warning=' '.join(warnings) or None)
         return result
 
     def loop(self):

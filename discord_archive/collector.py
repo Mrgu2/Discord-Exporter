@@ -47,6 +47,7 @@ class DiscordClient:
     def __init__(self, token, transport=None, sleep=time.sleep):
         self._token = token
         self.transport, self.sleep = transport or http_transport, sleep
+        self._channel_cache = {}
 
     def get(self, path, params=None):
         if not path.startswith('/') or '://' in path:
@@ -93,6 +94,17 @@ class DiscordClient:
             raise ValueError('Invalid channel id')
         return self.get(f'/channels/{channel_id}/messages', {'limit': limit, 'before': before, 'after': after})
 
+    def get_channel(self, channel_id):
+        channel_id = str(channel_id)
+        if not channel_id.isdigit():
+            raise ValueError('Invalid channel id')
+        if channel_id not in self._channel_cache:
+            channel = self.get(f'/channels/{channel_id}')
+            if not isinstance(channel, dict) or str(channel.get('id', '')) != channel_id:
+                raise DiscordAPIError(0, '频道元数据响应异常，未推进保存位置')
+            self._channel_cache[channel_id] = dict(channel)
+        return dict(self._channel_cache[channel_id])
+
 
 _capture_lock = threading.Lock()
 
@@ -121,6 +133,22 @@ class CaptureService:
                 before, newest = None, state.get('cursor')
                 details = {'channel_id': channel_id, 'run_id': run_id, 'message_count': 0, 'inserted': 0, 'status': 'running'}
                 try:
+                    # REST message objects usually omit guild_id. Persist the
+                    # configured channel's metadata so offline source links do
+                    # not incorrectly point at the direct-message (@me) route.
+                    # Simple historical fixtures implement list_messages only.
+                    get_channel = getattr(self.client, 'get_channel', None)
+                    if not state.get('guild_id') and callable(get_channel):
+                        metadata = get_channel(channel_id)
+                        if not isinstance(metadata, dict) or str(metadata.get('id', '')) != channel_id:
+                            raise DiscordAPIError(0, '频道元数据响应异常，未推进保存位置')
+                        guild_id = metadata.get('guild_id')
+                        if guild_id is not None and not str(guild_id).isdigit():
+                            raise DiscordAPIError(0, '频道服务器 ID 无效，未推进保存位置')
+                        if guild_id is None and metadata.get('type') not in (1, 3):
+                            raise DiscordAPIError(0, '频道元数据缺少服务器信息，未推进保存位置')
+                        self.store.ensure_channel(channel_id, guild_id=str(guild_id) if guild_id is not None else None,
+                            name=(channel.get('label') if isinstance(channel, dict) else None) or metadata.get('name'))
                     for _page in range(10000):
                         messages = self.client.list_messages(channel_id, before=before)
                         if not isinstance(messages, list):

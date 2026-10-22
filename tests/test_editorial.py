@@ -251,6 +251,36 @@ class EditorialTests(unittest.TestCase):
                 self.assertIn('data-kind="feed"',document)
                 self.assertIn('data-kind="qa"',document)
 
+    def test_mobile_columns_keep_only_their_own_capture_and_attachment_gaps(self):
+        self.settings.value['channels']=[{'id':str(channel),'label':f'栏目{channel}','kind':'feed'}
+                                          for channel in (100,200,300,400)]
+        self.save([message(1,'等待确认。')])
+        self.store.record_gap('100','2026-10-20T00:00:00Z','2026-10-21T00:00:00Z')
+        for channel in ('200','300'):
+            run=self.store.start_run(channel)
+            attachments=[{'id':'image','filename':'missing.png','url':'https://example.invalid/missing.png'}] if channel=='200' else []
+            self.store.ingest_messages(channel,[message(channel,'控制仓位。',channel_id=channel,attachments=attachments)],run)
+            self.store.finish_run(run,True)
+        capture_warning='归档存在可能的留存缺口，当前稿件只覆盖实际保存到的内容。'
+        attachment_warning='部分附件未保存在本地，离线阅读前请核对下载结果。'
+        for layout in ('stacked','horizontal','collage','board'):
+            with self.subTest(layout=layout):
+                draft=self.service.generate({'scope':'day','date':'2026-10-21','layout':layout})
+                folder=Path(draft['path']).parent
+                columns={column['channel_id']:(folder/column['file']).read_text() for column in draft['single_columns']}
+                self.assertEqual(columns['100'].count(capture_warning),1)
+                self.assertNotIn(attachment_warning,columns['100'])
+                self.assertEqual(columns['200'].count(attachment_warning),1)
+                self.assertNotIn(capture_warning,columns['200'])
+                for channel in ('300','400'):
+                    if channel in columns:
+                        self.assertNotIn(capture_warning,columns[channel])
+                        self.assertNotIn(attachment_warning,columns[channel])
+                main=Path(draft['path']).read_text()
+                self.assertEqual(main.count(capture_warning),1)
+                self.assertEqual(main.count(attachment_warning),1)
+                self.assertNotIn('阅读提示',main)
+
     def test_media_manifest_embeds_local_image_and_preserves_full_source_id(self):
         media = self.root/"data"/"media"
         media.mkdir(parents=True)

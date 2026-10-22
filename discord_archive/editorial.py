@@ -148,12 +148,20 @@ class DraftService:
         source_messages = {_key(message): message for group in all_groups for message in group['messages']}
         for channel in selection['channels']:
             media_archive.archive_page(channel, None, [message for message in source_messages.values() if message['channel_id'] == channel])
-        if any(self._media(message,attachment).get("status") != "saved" for message in source_messages.values() for attachment in iter_message_assets(message)):
-            warnings.append("部分附件未保存在本地，离线阅读前请核对下载结果。")
-        for channel in selection["channels"]:
-            if self.store.channel_status(channel)["coverage_gaps"]:
-                warnings.append("归档存在可能的留存缺口，当前稿件只覆盖实际保存到的内容。")
-                break
+        missing_assets = {_key(message) for message in source_messages.values()
+            if any(self._media(message,attachment).get("status") != "saved" for attachment in iter_message_assets(message))}
+        channels_with_gaps = {channel for channel in selection["channels"] if self.store.channel_status(channel)["coverage_gaps"]}
+        attachment_warning = "部分附件未保存在本地，离线阅读前请核对下载结果。"
+        capture_warning = "归档存在可能的留存缺口，当前稿件只覆盖实际保存到的内容。"
+        if missing_assets:
+            warnings.append(attachment_warning)
+        if channels_with_gaps:
+            warnings.append(capture_warning)
+        for panel in panels:
+            if any(_key(message) in missing_assets for group in panel["groups"] for message in group["messages"]):
+                panel["warnings"].append(attachment_warning)
+            if panel["channel_id"] in channels_with_gaps:
+                panel["warnings"].append(capture_warning)
         title = str(request.get("title") or selection["label"]).strip()[:150]
         source_groups, source_panels = all_groups, panels
         decisions = []

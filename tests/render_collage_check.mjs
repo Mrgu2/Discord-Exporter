@@ -36,13 +36,13 @@ const shell=(content,layout='collage')=>`<!doctype html><meta charset="utf-8"><s
 const generated=shell(`<div class="panel-grid"><section class="content-panel"><h2 class="category-title">九组问答</h2>${questions}</section>${feeds}</div>`);
 const fixture=process.argv[2]?fs.readFileSync(path.resolve(process.argv[2]),'utf8'):generated;
 
-function render(name,html) {
+function render(name,html,maximumHeight=3600) {
   const input=path.join(directory,name+'.html'),output=path.join(directory,name);
   fs.writeFileSync(input,html);
   const child=spawnSync(process.execPath,[path.join(project,'scripts','render.mjs'),input,output],{encoding:'utf8',timeout:120000});
   assert.equal(child.status,0,child.stderr || 'Renderer failed');
   const result=JSON.parse(child.stdout);
-  assert.ok(result.dimensions.every(box=>box.height<=3600),'Page exceeded 3600px');
+  assert.ok(result.dimensions.every(box=>box.height<=maximumHeight),'Page exceeded its height limit');
   result.images.forEach((file,index)=>{
     const png=fs.readFileSync(file);
     assert.equal(png.readUInt32BE(16),result.dimensions[index].width,'PNG width differs from metadata');
@@ -95,6 +95,38 @@ assert.equal(horizontal.image_coverage.expected_unique_images,1);
 assert.equal(horizontal.topic_integrity.fragmented_topics,0);
 assert.ok(horizontal.dimensions[0].width<=32000 && horizontal.dimensions[0].width*horizontal.dimensions[0].height<=80_000_000);
 
+const sectional=withImageHtml.replace(questions,questions.repeat(3))
+  .replaceAll('<section class="content-panel">','<section class="content-panel" data-kind="feed">')
+  .replace('<section class="content-panel" data-kind="feed">','<section class="content-panel" data-kind="qa">')
+  .replace('data-layout="collage"','data-presentation="reading" data-layout="stacked"');
+const stacked=render('stacked',sectional,32000);
+assert.equal(stacked.layout_mode,'stacked');
+assert.equal(stacked.page_count,1);
+assert.equal(stacked.dimensions[0].width,4236,'The Q&A count must not extend canvas width');
+assert.deepEqual(stacked.bands.map(band=>band.kind),['feed','qa']);
+assert.equal(stacked.bands[0].columns,4);
+assert.equal(stacked.bands[1].columns,4);
+assert.equal(stacked.bands[0].width,stacked.bands[1].width,'Top and bottom strips have different widths');
+assert.ok(stacked.bands[1].y>=stacked.bands[0].y+stacked.bands[0].height,'Q&A did not sit below feed channels');
+assert.equal(stacked.source_coverage.expected_unique_sources,25);
+assert.equal(stacked.image_coverage.expected_unique_images,1);
+assert.equal(stacked.reading_order.sequential,true);
+assert.equal(stacked.topic_integrity.fragmented_topics,0,'Stacked strips split a complete Q&A');
+assert.deepEqual(stacked.structure,{headings:1,footers:0,columns:8});
+assert.ok(stacked.raster_tiles.length>1,'The tiled raster path was not exercised');
+assert.ok(stacked.dimensions[0].width*stacked.dimensions[0].height<=80_000_000);
+
+const onlyQa=render('stacked-only-qa',shell(`<div class="panel-grid"><section class="content-panel" data-kind="qa"><h2 class="category-title">九组问答</h2>${questions.repeat(3)}</section></div>`,'stacked'),32000);
+assert.deepEqual(onlyQa.bands.map(band=>band.kind),['qa']);
+assert.equal(onlyQa.source_coverage.expected_unique_sources,18);
+assert.equal(onlyQa.reading_order.sequential,true);
+
+const notice='<article class="topic" data-archive-warnings><h2>归档提示</h2><section class="block note" data-segment><div class="block-label">核对范围</div><p class="message-text">有 1 条引用消息未保存在本地。</p></section></article>';
+const withNotice=render('stacked-with-notice',sectional.replace(questions.repeat(3),questions.repeat(3)+notice),32000);
+assert.equal(withNotice.dimensions[0].width,stacked.dimensions[0].width,'An actual warning added a separate column');
+assert.equal(withNotice.topic_integrity.fragmented_topics,0);
+assert.equal(withNotice.text_coverage.expected_characters,stacked.text_coverage.expected_characters+Array.from('有 1 条引用消息未保存在本地。').length);
+
 const oversizedInput=path.join(directory,'horizontal-oversized.html'),oversizedOutput=path.join(directory,'horizontal-oversized');
 fs.writeFileSync(oversizedInput,generated.replace(questions,questions.repeat(40)).replace('data-layout="collage"','data-layout="horizontal"'));
 const oversized=spawnSync(process.execPath,[path.join(project,'scripts','render.mjs'),oversizedInput,oversizedOutput],{encoding:'utf8',timeout:120000});
@@ -111,4 +143,4 @@ assert.ok(qa.dimensions.every(box=>box.width===1080));
 assert.equal(qa.source_coverage.expected_unique_sources,18);
 assert.equal(qa.topic_integrity.fragmented_topics,0,'Mobile pages separated a small question from its answer');
 
-console.log(JSON.stringify({directory,masonry,with_image:withImage,reading,horizontal,oversized_rejected:true,board:{page_count:board.page_count,source_coverage:board.source_coverage},qa:{page_count:qa.page_count,source_coverage:qa.source_coverage}},null,2));
+console.log(JSON.stringify({directory,masonry,with_image:withImage,reading,horizontal,stacked,stacked_only_qa:onlyQa,stacked_warning:withNotice,oversized_rejected:true,board:{page_count:board.page_count,source_coverage:board.source_coverage},qa:{page_count:qa.page_count,source_coverage:qa.source_coverage}},null,2));

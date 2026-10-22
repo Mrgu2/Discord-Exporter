@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
-import { stitchHorizontalPng } from './png.mjs';
+import { stitchHorizontalPng, stitchPngGrid } from './png.mjs';
 
 const require = createRequire(import.meta.url);
 const input = path.resolve(process.argv[2] || '');
@@ -61,8 +61,11 @@ async function main() {
       const subtitle = original.querySelector('.document-meta')?.textContent || '';
       const sourcePanels = [...original.querySelectorAll('.panel-grid > .content-panel')];
       if(sourcePanels.length) {
+        const stacked=document.body.dataset.layout==='stacked';
+        const flowPanels=stacked?[...sourcePanels.filter(panel=>panel.dataset.kind==='feed'),...sourcePanels.filter(panel=>panel.dataset.kind!=='feed')]:sourcePanels;
         let topicOrder=0;
-        for(const panel of sourcePanels)for(const topic of panel.querySelectorAll(':scope > .topic'))topic.dataset.topicOrder=String(topicOrder++);
+        for(const panel of flowPanels)for(const topic of panel.querySelectorAll(':scope > .topic:not([data-archive-warnings])'))topic.dataset.topicOrder=String(topicOrder++);
+        for(const topic of original.querySelectorAll('[data-archive-warnings]'))topic.dataset.topicOrder=String(topicOrder++);
         const measurement=document.createElement('div');
         measurement.style.cssText='position:absolute;left:-10000px;top:0;width:1080px;visibility:hidden';
         document.body.append(measurement);
@@ -86,6 +89,72 @@ async function main() {
         const holder=document.createElement('div');holder.id='render-pages';document.body.append(holder);original.style.display='none';
         const titleFor=panel=>sourcePanels[panel].querySelector(':scope > .category-title').textContent;
         const panelEntries=panel=>[...sourcePanels[panel].querySelectorAll(':scope > .topic')].map(element=>({panel,element:element.cloneNode(true)}));
+        if(stacked) {
+          const feeds=sourcePanels.map((panel,index)=>panel.dataset.kind==='feed'?index:null).filter(index=>index!==null);
+          const questions=sourcePanels.map((panel,index)=>panel.dataset.kind!=='feed'?index:null).filter(index=>index!==null);
+          const entries=questions.flatMap(panelEntries).filter(entry=>!entry.element.hasAttribute('data-archive-warnings'));
+          const columns=Math.min(4,Math.max(feeds.length,Math.ceil(entries.length/6),1));
+          const columnWidth=1002,gutter=36,width=120+columns*columnWidth+(columns-1)*gutter;
+          const canvas=document.createElement('div');canvas.className='render-page composition-page stacked-page';canvas.style.width=width+'px';
+          const heading=document.createElement('div');heading.className='page-heading';heading.textContent=title;
+          const sub=document.createElement('div');sub.className='page-subtitle';sub.textContent=subtitle;
+          canvas.append(heading,sub);holder.append(canvas);
+          const bands=[];
+          const rowFor=(kind,count)=>{
+            const band=document.createElement('section');band.className='stacked-band';band.dataset.bandKind=kind;
+            const row=document.createElement('div');row.className='composition-lanes';row.style.gridTemplateColumns=`repeat(${count},minmax(0,1fr))`;
+            band.append(row);canvas.append(band);bands.push(band);return {band,row};
+          };
+          const fillBand=(kind,entries,sharedTitle=false)=>{
+            if(!entries.length)return;
+            const {band,row}=rowFor(kind,columns);
+            if(sharedTitle){const h2=document.createElement('h2');h2.className='category-title';h2.textContent=titleFor(entries[0].panel);band.prepend(h2);}
+            const probe=document.createElement('section');probe.className='content-panel';
+            const measure=document.createElement('div');measure.className='composition-lane';measure.style.width=columnWidth+'px';measure.append(probe);row.append(measure);
+            const weights=entries.map(entry=>{
+              const copy=entry.element.cloneNode(true);probe.append(copy);
+              const weight=copy.getBoundingClientRect().height+parseFloat(getComputedStyle(copy).marginBottom);
+              copy.remove();return weight;
+            });measure.remove();
+            // Contiguous partitions keep each complete Q&A together and read
+            // down one column before moving right. More content adds height.
+            const target=Math.min(columns,entries.length);
+            const partition=limit=>{
+              const parts=[[]];let load=0;
+              entries.forEach((entry,index)=>{
+                if(parts.at(-1).length && (load+weights[index]>limit || entries.length-index===target-parts.length)){parts.push([]);load=0;}
+                parts.at(-1).push(entry);load+=weights[index];
+              });return parts;
+            };
+            let low=Math.max(...weights),high=weights.reduce((sum,value)=>sum+value,0);
+            while(high-low>1){const middle=(low+high)/2;if(partition(middle).length>target)low=middle;else high=middle;}
+            const parts=partition(high),seen=new Set();
+            for(const part of parts) {
+              const lane=document.createElement('div');lane.className='composition-lane';row.append(lane);
+              let section,identity;
+              for(const entry of part) {
+                if(identity!==entry.panel) {
+                  section=document.createElement('section');section.className='content-panel';identity=entry.panel;
+                  if(!sharedTitle){const h2=document.createElement('h2');h2.className='category-title';h2.textContent=titleFor(identity)+(seen.has(identity)?'（续）':'');section.append(h2);}
+                  lane.append(section);seen.add(identity);
+                }
+                section.append(entry.element.cloneNode(true));
+              }
+            }
+          };
+          fillBand('feed',feeds.flatMap(panelEntries).filter(entry=>!entry.element.hasAttribute('data-archive-warnings')));
+          fillBand('qa',entries,questions.length===1);
+          const notice=original.querySelector('[data-archive-warnings]');
+          if(notice){const copy=notice.cloneNode(true);copy.classList.add('archive-notice');canvas.append(copy);}
+          const height=Math.ceil(canvas.getBoundingClientRect().height);
+          if(height>MAX_CANVAS_WIDTH || width*height>MAX_CANVAS_PIXELS)throw new Error('上下分区拼图超过单图尺寸限制，请缩小日期范围后重试。');
+          let usedArea=0,totalArea=0;
+          for(const band of bands){const boxes=[...band.querySelectorAll('.composition-lane')].map(lane=>lane.getBoundingClientRect());const tallest=Math.max(...boxes.map(box=>box.height));usedArea+=boxes.reduce((sum,box)=>sum+box.width*box.height,0);totalArea+=boxes.reduce((sum,box)=>sum+box.width*tallest,0);}
+          return {count:1,width,layout_mode:'stacked',panel_heights:measured,column_width:columnWidth,blank_ratio:totalArea?Math.max(0,1-usedArea/totalArea):0,
+            bands:bands.map(band=>({kind:band.dataset.bandKind,columns:band.querySelectorAll('.composition-lane').length,
+              x:Math.round(band.getBoundingClientRect().x-canvas.getBoundingClientRect().x),y:Math.round(band.getBoundingClientRect().y-canvas.getBoundingClientRect().y),
+              width:Math.round(band.getBoundingClientRect().width),height:Math.ceil(band.getBoundingClientRect().height)}))};
+        }
         const horizontal=document.body.dataset.layout==='horizontal';
         const ordered=horizontal || (document.body.dataset.presentation==='reading' && !board && sourcePanels.length>1);
         const candidates=ordered?[{mode:'ordered-two',width:2160,queues:[sourcePanels.flatMap((_,index)=>panelEntries(index))]}]:[{mode,width,queues:assignments.map(indices=>indices.flatMap(panelEntries))}];
@@ -405,7 +474,24 @@ async function main() {
       const box=await locator.boundingBox();
       const filename=path.join(output,`long-${String(index+1).padStart(2,'0')}.png`);
       let png;
-      if(rendered.layout_mode==='horizontal') {
+      if(rendered.layout_mode==='stacked') {
+        const width=Math.round(box.width),height=Math.ceil(box.height);
+        await locator.evaluate(element=>{
+          const frame=document.createElement('div');frame.id='raster-frame';frame.style.cssText='position:relative;overflow:hidden;background:white';
+          element.before(frame);frame.append(element);element.style.position='relative';element.style.margin='0';
+        });
+        const tiles=[];
+        for(let y=0;y<height;y+=4096)for(let x=0;x<width;x+=4096){
+          const tileWidth=Math.min(4096,width-x),tileHeight=Math.min(4096,height-y);
+          await page.locator('#raster-frame').evaluate((frame,{x,y,width,height})=>{
+            frame.style.width=width+'px';frame.style.height=height+'px';frame.firstElementChild.style.left=-x+'px';frame.firstElementChild.style.top=-y+'px';
+          },{x,y,width:tileWidth,height:tileHeight});
+          const tile=await page.locator('#raster-frame').screenshot({animations:'disabled'});
+          if(tile.readUInt32BE(16)!==tileWidth||tile.readUInt32BE(20)!==tileHeight)throw new Error('分区渲染片段尺寸异常。');
+          tiles.push({buffer:tile,x,y});rasterTiles.push({x,y,width:tileWidth,height:tileHeight});
+        }
+        png=stitchPngGrid(tiles,width,height);fs.writeFileSync(filename,png);
+      }else if(rendered.layout_mode==='horizontal') {
         // Chromium can wrap screenshot pixels beyond its texture limit. Keep
         // each capture narrow and paint the requested columns at viewport x=0.
         await locator.evaluate((element,height)=>{
@@ -424,7 +510,7 @@ async function main() {
       }else png=await locator.screenshot({path:filename,animations:'disabled'});
       images.push(filename);dimensions.push({width:png.readUInt32BE(16),height:png.readUInt32BE(20)});
     }
-    process.stdout.write(JSON.stringify({images,dimensions,page_count:rendered.count,layout_mode:rendered.layout_mode,panel_heights:rendered.panel_heights,horizontal_columns:rendered.horizontal_columns,column_width:rendered.column_width,
+    process.stdout.write(JSON.stringify({images,dimensions,page_count:rendered.count,layout_mode:rendered.layout_mode,panel_heights:rendered.panel_heights,horizontal_columns:rendered.horizontal_columns,column_width:rendered.column_width,bands:rendered.bands,
       blank_ratio:rendered.blank_ratio,lane_heights:rendered.lane_heights,layout_candidates:rendered.layout_candidates,raster_tiles:rasterTiles,...verification}));
   } finally { await browser.close(); }
 }

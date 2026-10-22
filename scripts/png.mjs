@@ -1,4 +1,4 @@
-// Lossless horizontal assembly of the 8-bit, non-interlaced PNG tiles emitted
+// Lossless assembly of the 8-bit, non-interlaced PNG tiles emitted
 // by Chromium. No native package or second image encoder is required.
 import zlib from 'node:zlib';
 
@@ -29,6 +29,26 @@ function parse(buffer){
 }
 const paeth=(a,b,c)=>{const p=a+b-c,pa=Math.abs(p-a),pb=Math.abs(p-b),pc=Math.abs(p-c);return pa<=pb&&pa<=pc?a:pb<=pc?b:c;};
 
+function copyPixels(tile,raw,stride,left,top){
+  const tileStride=tile.width*tile.channels,scanlines=zlib.inflateSync(Buffer.concat(tile.data),{maxOutputLength:(tileStride+1)*tile.height});
+  if(scanlines.length!==(tileStride+1)*tile.height)throw new Error('PNG 渲染片段像素不完整。');
+  let previous=Buffer.alloc(tileStride);
+  for(let y=0;y<tile.height;y++){
+    const filter=scanlines[y*(tileStride+1)],row=Buffer.from(scanlines.subarray(y*(tileStride+1)+1,(y+1)*(tileStride+1)));
+    if(filter>4)throw new Error('PNG 渲染滤波格式不受支持。');
+    for(let x=0;x<tileStride;x++){
+      const a=x>=tile.channels?row[x-tile.channels]:0,b=previous[x],c=x>=tile.channels?previous[x-tile.channels]:0;
+      row[x]=(row[x]+(filter===1?a:filter===2?b:filter===3?Math.floor((a+b)/2):filter===4?paeth(a,b,c):0))&255;
+    }
+    row.copy(raw,(top+y)*(stride+1)+1+left*tile.channels);previous=row;
+  }
+}
+
+function encodePixels(first,raw,width,height){
+  const header=Buffer.from(first.header);header.writeUInt32BE(width);header.writeUInt32BE(height,4);
+  return Buffer.concat([SIGNATURE,chunk('IHDR',header),...first.color.map(item=>chunk(item.type,item.data)),chunk('IDAT',zlib.deflateSync(raw,{level:6})),chunk('IEND',Buffer.alloc(0))]);
+}
+
 export function stitchHorizontalPng(buffers){
   if(!buffers.length)throw new Error('没有可拼接的 PNG 片段。');
   const tiles=buffers.map(parse),first=tiles[0],width=tiles.reduce((sum,tile)=>sum+tile.width,0),height=first.height,channels=first.channels;
@@ -36,20 +56,41 @@ export function stitchHorizontalPng(buffers){
   if(tiles.some(tile=>tile.height!==height||tile.channels!==channels))throw new Error('PNG 渲染片段尺寸或格式不一致。');
   const stride=width*channels,raw=Buffer.alloc((stride+1)*height);let horizontal=0;
   for(const tile of tiles){
-    const tileStride=tile.width*channels,scanlines=zlib.inflateSync(Buffer.concat(tile.data),{maxOutputLength:(tileStride+1)*height});
-    if(scanlines.length!==(tileStride+1)*height)throw new Error('PNG 渲染片段像素不完整。');
-    let previous=Buffer.alloc(tileStride);
-    for(let y=0;y<height;y++){
-      const filter=scanlines[y*(tileStride+1)],row=Buffer.from(scanlines.subarray(y*(tileStride+1)+1,(y+1)*(tileStride+1)));
-      if(filter>4)throw new Error('PNG 渲染滤波格式不受支持。');
-      for(let x=0;x<tileStride;x++){
-        const a=x>=channels?row[x-channels]:0,b=previous[x],c=x>=channels?previous[x-channels]:0;
-        row[x]=(row[x]+(filter===1?a:filter===2?b:filter===3?Math.floor((a+b)/2):filter===4?paeth(a,b,c):0))&255;
-      }
-      row.copy(raw,y*(stride+1)+1+horizontal*channels);previous=row;
-    }
+    copyPixels(tile,raw,stride,horizontal,0);
     horizontal+=tile.width;
   }
-  const header=Buffer.from(first.header);header.writeUInt32BE(width);header.writeUInt32BE(height,4);
-  return Buffer.concat([SIGNATURE,chunk('IHDR',header),...first.color.map(item=>chunk(item.type,item.data)),chunk('IDAT',zlib.deflateSync(raw,{level:6})),chunk('IEND',Buffer.alloc(0))]);
+  return encodePixels(first,raw,width,height);
+}
+
+// Each row must fill the complete canvas width, with equally tall tiles in
+// that row. Rows may have different heights; input order does not matter.
+export function stitchPngGrid(tiles,width,height){
+  if(!Array.isArray(tiles)||!tiles.length)throw new Error('没有可拼接的 PNG 片段。');
+  if(!Number.isInteger(width)||!Number.isInteger(height)||width<1||height<1||width>32000||height>32000||width*height>80_000_000)throw new Error('拼图超过单图尺寸限制。');
+  const placements=tiles.map(placement=>{
+    if(!placement||!Buffer.isBuffer(placement.buffer)||!Number.isInteger(placement.x)||!Number.isInteger(placement.y)||placement.x<0||placement.y<0)throw new Error('PNG 网格片段位置或格式无效。');
+    const tile=parse(placement.buffer);
+    if(placement.x+tile.width>width||placement.y+tile.height>height)throw new Error('PNG 网格片段超出画布边界。');
+    return {tile,x:placement.x,y:placement.y};
+  }).sort((left,right)=>left.y-right.y||left.x-right.x);
+  const first=placements[0].tile;
+  if(placements.some(({tile})=>tile.channels!==first.channels))throw new Error('PNG 渲染片段尺寸或格式不一致。');
+  let bottom=0,index=0;
+  while(index<placements.length){
+    const rowY=placements[index].y,rowHeight=placements[index].tile.height;
+    if(rowY!==bottom)throw new Error('PNG 网格片段重叠或缺失。');
+    let right=0;
+    while(index<placements.length&&placements[index].y===rowY){
+      const placement=placements[index++];
+      if(placement.x!==right||placement.tile.height!==rowHeight)throw new Error('PNG 网格片段重叠、缺失或行高不一致。');
+      right+=placement.tile.width;
+    }
+    if(right!==width)throw new Error('PNG 网格片段缺失，未覆盖整行。');
+    bottom+=rowHeight;
+  }
+  if(bottom!==height)throw new Error('PNG 网格片段缺失，未覆盖完整画布。');
+  const stride=width*first.channels,raw=Buffer.alloc((stride+1)*height);
+  // Inflate one tile at a time rather than retaining a second full canvas.
+  for(const {tile,x,y} of placements)copyPixels(tile,raw,stride,x,y);
+  return encodePixels(first,raw,width,height);
 }

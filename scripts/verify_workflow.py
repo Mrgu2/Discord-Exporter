@@ -20,7 +20,7 @@ import time
 import zlib
 from http.server import ThreadingHTTPServer
 from pathlib import Path
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import ProxyHandler, Request, build_opener
 from unittest.mock import patch
@@ -82,6 +82,8 @@ class FakeDiscordTransport:
         self.round = 1
         self.calls = 0
         self.metadata_calls = 0
+        self.offline = False
+        self.failed_calls = 0
 
     def __call__(self,method,url,headers):
         location = urlsplit(url)
@@ -90,6 +92,9 @@ class FakeDiscordTransport:
         require(method == "GET" and location.hostname == "discord.com" and (match is not None or metadata_match is not None),"Unexpected synthetic transport request")
         require(headers.get("Authorization") == "synthetic-workflow-only-credential","Unexpected verification credential")
         self.calls += 1
+        if self.offline:
+            self.failed_calls += 1
+            raise URLError('Synthetic transport outage; no network request was made')
         if metadata_match:
             self.metadata_calls += 1
             channel = metadata_match.group(1)
@@ -166,7 +171,7 @@ def verify():
                 return json.loads(raw),headers
 
             def wait_for_job(predicate,deadline_seconds=40):
-                deadline = min(began+58,time.monotonic()+deadline_seconds)
+                deadline = min(began+100,time.monotonic()+deadline_seconds)
                 while time.monotonic() < deadline:
                     status,_ = json_request("/api/status")
                     state = status["state"]
@@ -178,13 +183,23 @@ def verify():
                     time.sleep(1)
                 raise AssertionError("HTTP-submitted worker job exceeded the verification time budget")
 
+            def wait_for_state(predicate,deadline_seconds=50):
+                deadline=min(began+100,time.monotonic()+deadline_seconds)
+                while time.monotonic()<deadline:
+                    status,_=json_request('/api/status')
+                    if predicate(status):
+                        return status
+                    time.sleep(.25)
+                raise AssertionError('Scheduled recovery exceeded the verification time budget')
+
             page,_ = request("/")
             require(b'archive-key' in page and b'connect-browser-button' in page,"Copied web UI or connection entry did not load")
             json_request("/api/config","PUT",{
                 "channels":CHANNELS,"target_author_id":OWNER,"target_message_url":"",
-                "download_media":False,"schedule":{"enabled":False,"interval_minutes":360,"times":[],"timezone":"America/New_York","window":{"enabled":False,"start":"15:50","end":"16:10","every_minutes":5,"weekdays":[0,1,2,3,4]}}})
-            # This is a fixture with explicit manual HTTP captures; remove the
-            # configuration-triggered catch-up slot before starting its worker.
+                "download_media":False,"schedule":{"enabled":True,"interval_minutes":360,"times":[],"timezone":"America/New_York","window":{"enabled":False,"start":"15:50","end":"16:10","every_minutes":5,"weekdays":[0,1,2,3,4]}}})
+            # Exercise the real clock -> due -> queue -> capture path on first
+            # startup, without changing the system clock or the user's config.
+            # The config route's catch-up slot is unrelated to this assertion.
             app.worker.state["retry_at"] = None
             raw_png = fixture_png()
             media_path = root/"data"/"media"/"synthetic.png"
@@ -193,9 +208,10 @@ def verify():
             atomic_json(app.worker.media.path,app.worker.media.manifest)
             app.worker.start()
 
-            json_request("/api/capture","POST",{},expected=202)
             first = wait_for_job(lambda result:len(result.get("channels",[])) == 5)
             require(first["status"] == "success","First synthetic capture did not succeed")
+            require(all(app.store.get_run(row['run_id'])['trigger']=='scheduled' for row in first['channels']),"The enabled schedule did not drive the real worker queue")
+            require(str(app.worker.state.get('last_slot','')).startswith('interval:'),"The scheduled slot was not persisted")
             first_max = max(row["run_id"] for row in first["channels"])
             transport.round = 2
             json_request("/api/capture","POST",{},expected=202)
@@ -206,13 +222,13 @@ def verify():
             counts = app.store.summary()
             require(counts["message_count"] == 9 and counts["version_count"] == 10,"Repeated HTTP captures did not deduplicate or retain edits correctly")
 
-            json_request("/api/drafts","POST",{"scope":"latest","layout":"collage","mode":"evidence","title":"五频道两轮 · 虚构增量验收"},expected=202)
+            json_request("/api/drafts","POST",{"scope":"latest","layout":"stacked","mode":"evidence","title":"五频道两轮 · 虚构增量验收"},expected=202)
             incremental = wait_for_job(lambda result:result.get("scope") == "latest" and bool(result.get("evidence_url")))
             delta_evidence,_ = json_request(incremental["evidence_url"])
             delta_ids = {message["message_id"] for panel in delta_evidence["panels"] for message in panel["messages"]}
             require(incremental["message_count"] == 3 and delta_ids == {"10101","10504","10505"},"Latest-round draft repeated unchanged messages or lost an edit/new contribution")
             require(len(delta_evidence["panels"]) == 2,"Unchanged channels were not omitted from the incremental draft")
-            json_request("/api/drafts","POST",{"scope":"day","date":"2026-10-21","layout":"collage","mode":"evidence","title":"五频道两轮 · 虚构交易日验收"},expected=202)
+            json_request("/api/drafts","POST",{"scope":"day","date":"2026-10-21","layout":"stacked","mode":"evidence","title":"五频道两轮 · 虚构交易日验收"},expected=202)
             draft = wait_for_job(lambda result:result.get("scope") == "day" and bool(result.get("evidence_url")))
             require(Path(draft["path"]).is_relative_to(root),"Draft output escaped the isolated root")
             document,_ = request(draft["url"])
@@ -230,6 +246,9 @@ def verify():
 
             json_request("/api/render","POST",{"draft_id":draft["id"]},expected=202)
             rendered = wait_for_job(lambda result:bool(result.get("images")) and result.get("draft",{}).get("id") == draft["id"])
+            require(rendered.get('layout_mode')=='stacked' and len(rendered['images'])==1,'The section strips were not combined into one image')
+            bands=rendered['draft']['render_verification']['bands']
+            require([band['kind'] for band in bands]==['feed','qa'] and bands[0]['width']==bands[1]['width'] and bands[1]['y']>=bands[0]['y']+bands[0]['height'],'The feed and Q&A strips did not stack at equal width')
             all_images = rendered["images"]+[image for column in rendered["single_columns"] for image in column["images"]]
             require(len(rendered["single_columns"]) == 5 and all_images,"Theme mobile exports were not produced")
             dimensions = []
@@ -237,7 +256,8 @@ def verify():
                 png,_ = request(image)
                 require(png.startswith(b"\x89PNG\r\n\x1a\n"),"Rendered PNG could not be downloaded")
                 width,height = struct.unpack(">II",png[16:24])
-                require(height <= 3600 and width in (1080,2160,2880,3200),"Rendered image exceeded the output dimensions")
+                require((image in rendered['images'] and width==4236 and height<=32000 and width*height<=80_000_000)
+                    or (image not in rendered['images'] and width==1080 and height<=3600),"Rendered image exceeded the output dimensions")
                 dimensions.append({"width":width,"height":height})
 
             json_request("/api/status",phone=True,expected=401)
@@ -250,11 +270,38 @@ def verify():
             request(rendered["images"][0],phone=True,cookie=cookie)
             json_request("/api/connect-browser","POST",{},phone=True,cookie=cookie,expected=403)
             require(Path(app.store.db_path).is_relative_to(root) and app.worker.root == root and app.settings.root == root,"A persistent component used the user's workspace data")
+
+            # No manual retry or clock acceleration: the real worker records
+            # its normal 30-second backoff and later submits reconnect itself.
+            before_failure={row['id']:app.store.channel_status(row['id'])['cursor'] for row in CHANNELS}
+            transport.offline=True
+            json_request('/api/capture','POST',{},expected=202)
+            failed=wait_for_state(lambda status:status['state'].get('last_job_status')=='failed' and not status['state'].get('active_job'))
+            failed_run=app.store.list_runs(limit=1)[0]
+            require(failed_run['status']=='failed' and failed_run['trigger']=='manual','The synthetic outage was not recorded as a failed attempt')
+            require(failed['connectivity']['online'] is False and failed['state'].get('retry_at') and not failed['state'].get('requires_attention'),'Network failure did not enter automatic recovery')
+            persisted=json.loads((root/'data/worker-state.json').read_text())
+            require(persisted.get('offline_since') and persisted.get('retry_at')==failed['state']['retry_at'],'Recovery state was not persisted')
+            require(before_failure=={row['id']:app.store.channel_status(row['id'])['cursor'] for row in CHANNELS},'Failed capture advanced a successful cursor')
+            require(transport.failed_calls==3,'The API client did not finish its bounded retries')
+            transport.offline=False
+            restored_at=time.monotonic()
+            recovered=wait_for_state(lambda status:not status['state'].get('active_job') and status['state'].get('last_job_status')=='success'
+                and len((status['state'].get('last_result') or {}).get('channels',[]))==5
+                and min(row['run_id'] for row in status['state']['last_result']['channels'])>failed_run['run_id'])
+            recovery_wait=round(time.monotonic()-restored_at,2)
+            require(all(app.store.get_run(row['run_id'])['trigger']=='reconnect' for row in recovered['state']['last_result']['channels']),'Recovery required manual submission')
+            require(recovered['connectivity']['online'] is True and recovered['state'].get('offline_since') is None and recovered['state'].get('retry_at') is None and recovered['state'].get('failures')==0,'Successful recovery did not clear offline/backoff state')
+            after_recovery=app.store.summary()
+            require(after_recovery['message_count']==9 and after_recovery['version_count']==10,'Recovery duplicated messages or lost edit history')
             return {"status":"passed","temporary_root":str(root),"server_url":base,"server_stopped":True,
-                "source_counts":{"channels":5,"rounds":2,"messages":counts["message_count"],"versions":counts["version_count"],"target_messages":draft["message_count"],"latest_round_target_messages":incremental["message_count"],"fake_api_requests":transport.calls,"metadata_requests":transport.metadata_calls},
+                "source_counts":{"channels":5,"rounds":2,"successful_capture_rounds":3,"failed_capture_rounds":1,"messages":counts["message_count"],"versions":counts["version_count"],"target_messages":draft["message_count"],"latest_round_target_messages":incremental["message_count"],"fake_api_requests":transport.calls,"metadata_requests":transport.metadata_calls},
                 "draft_path":draft["path"],"images":[str(root/path.lstrip("/")) for path in rendered["images"]],
                 "mobile_image_count":len(all_images)-len(rendered["images"]),"image_dimensions":dimensions,
+                "stacked_bands":bands,
                 "phone_auth":{"unauthenticated":401,"paired":200,"remote_browser_connect":403},
+                "schedule_and_recovery":{"scheduled_channels":5,"manual_capture":True,"failed_api_attempts":transport.failed_calls,
+                    "failed_cursor_unchanged":True,"persisted_retry":True,"automatic_reconnect_channels":5,"manual_retry":False,"wait_seconds":recovery_wait,"same_worker_thread":True},
                 "isolated_data":True,"elapsed_seconds":round(time.monotonic()-began,2)}
         finally:
             if app:

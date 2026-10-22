@@ -60,7 +60,7 @@ class DraftService:
         if scope not in {"latest","day","range"}:
             raise ValueError("整理范围须为 latest、day 或 range")
         rows = [row for row in config.get("channels",[]) if not isinstance(row,dict) or row.get("enabled",True)]
-        layout = request.get("layout","collage")
+        layout = request.get("layout","stacked")
         if layout == "board":
             rows = [row for row in rows if not isinstance(row,dict) or row.get("kind","feed") == "feed"]
             if len(rows) != 4:
@@ -77,7 +77,7 @@ class DraftService:
             successful = [run for run in self.store.list_runs(limit=10000) if run["status"] == "success" and run["channel_id"] in channels]
             if not successful:
                 raise ValueError("还没有成功保存的轮次，请先保存或导入一次")
-            if layout in {"board","collage","horizontal"}:
+            if layout in {"board","collage","horizontal","stacked"}:
                 for channel in channels:
                     runs = [run for run in successful if run["channel_id"] == channel]
                     if runs:
@@ -114,9 +114,9 @@ class DraftService:
         if presentation not in {"reading", "full"}:
             raise ValueError("请选择精简阅读或完整原文")
         mode = request.get("mode","evidence")
-        layout = request.get("layout","collage")
-        if layout not in {"qa","board","collage","horizontal"}:
-            raise ValueError("请选择横向长图、自动拼版、四栏拼版或问答页")
+        layout = request.get("layout","stacked")
+        if layout not in {"qa","board","collage","horizontal","stacked"}:
+            raise ValueError("请选择上下分区拼图、横向长图、自动拼版、四栏拼版或问答页")
         if mode not in {"evidence","model"}:
             raise ValueError("整理方式须为 evidence 或 model")
         if mode == "model":
@@ -141,7 +141,7 @@ class DraftService:
             panel_groups = self._group(bundle["items"]) if kind == "qa" else self._feed_groups(bundle["seeds"])
             if panel_groups or layout == "board":
                 panels.append({"channel_id":bundle["channel_id"],"title":row.get("label") or bundle["channel_id"],
-                    "kind":kind,"groups":panel_groups,"messages":bundle["seeds"]})
+                    "kind":kind,"groups":panel_groups,"messages":bundle["seeds"],"warnings":list(bundle["warnings"])})
         warnings = list(dict.fromkeys(warning for bundle in bundles for warning in bundle["warnings"]))
         all_groups = [group for panel in panels for group in panel["groups"]] if layout != "qa" else groups
         media_archive = getattr(self, 'media', None) or MediaArchive(self.root)
@@ -194,11 +194,11 @@ class DraftService:
         archive_md, archive_html = self._documents({**metadata, 'presentation':'full', 'message_count':len(items)},source_groups,config)
         (folder/'archive.md').write_text(archive_md,encoding='utf-8')
         (folder/'archive.html').write_text(archive_html,encoding='utf-8')
-        if layout in {"collage","board","horizontal"}:
+        if layout in {"collage","board","horizontal","stacked"}:
             document = self._panel_document(document,metadata,panels,config)
             for panel in panels:
                 single_name = f'single-{panel["channel_id"]}.html'
-                single_metadata = {**metadata,"title":f'{title} · {panel["title"]}',"message_count":len(panel["messages"]),"warnings":[]}
+                single_metadata = {**metadata,"title":f'{title} · {panel["title"]}',"message_count":len(panel["messages"]),"warnings":panel.get("warnings",[])}
                 _,single_document = self._documents(single_metadata,panel["groups"],config)
                 (folder/single_name).write_text(single_document,encoding="utf-8")
                 metadata["single_columns"].append({"title":panel["title"],"channel_id":panel["channel_id"],"url":f"/output/{identity}/{single_name}","file":single_name,"images":[]})
@@ -226,6 +226,7 @@ class DraftService:
         return {**saved,"status":saved.get("status","not_requested") if saved.get("status") != "saved" else "failed"}
 
     def _panel_document(self,document,metadata,panels,config):
+        warning = re.search(r'<article class="topic" data-archive-warnings>.*?</article>',document,re.S)
         panel_html = []
         for panel in panels:
             _,single = self._documents({**metadata,"warnings":[]},panel["groups"],config)
@@ -233,6 +234,10 @@ class DraftService:
             if panel["kind"] == "feed":
                 content = re.sub(r'<h2>.*?</h2>',"",content,flags=re.S)
             panel_html.append(f'<section class="content-panel" data-channel="{html.escape(panel["channel_id"])}" data-kind="{html.escape(panel["kind"])}"><h2 class="category-title">{html.escape(panel["title"])}</h2>{content}</section>')
+        if warning and panel_html:
+            # Keep the global notice in the renderer's topic flow without
+            # turning a four-column board into a fifth channel column.
+            panel_html[-1] = re.sub(r'</section>$',lambda match:warning.group(0)+match.group(0),panel_html[-1],count=1)
         wrapper = f'<div class="panel-grid" data-layout="{metadata["layout"]}">'+"".join(panel_html)+"</div>"
         document = re.sub(r'(</header>).*?(<nav class="download-links">)',lambda match:match.group(1)+wrapper+match.group(2),document,count=1,flags=re.S)
         document = re.sub(r'<body(?=[ >])',f'<body data-layout="{metadata["layout"]}"',document,count=1)
@@ -375,7 +380,7 @@ class DraftService:
             markdown.extend(["## 归档提示",""])
             warnings = "\n".join(metadata["warnings"])
             markdown.extend([warnings,""])
-            warning_html = '<article class="topic"><h2>归档提示</h2>'+block("核对范围",warnings,extra_class="note")+"</article>"
+            warning_html = '<article class="topic" data-archive-warnings><h2>归档提示</h2>'+block("核对范围",warnings,extra_class="note")+"</article>"
         document = f'''<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{html.escape(title)}</title><style>
 {(Path(__file__).resolve().parent.parent/"web"/"manuscript.css").read_text(encoding="utf-8")}
 {(Path(__file__).resolve().parent.parent/"web"/"reading.css").read_text(encoding="utf-8") if reading else ''}
@@ -414,7 +419,7 @@ class DraftService:
                 raise ValueError(safe_error[:500])
             return json.loads(result.stdout)
         rendered = render_file(folder/"index.html",folder)
-        verification_keys=('source_coverage','image_coverage','text_coverage','reading_order','topic_integrity','body_font_sizes','blank_ratio','structure','raster_tiles')
+        verification_keys=('source_coverage','image_coverage','text_coverage','reading_order','topic_integrity','body_font_sizes','blank_ratio','structure','raster_tiles','bands')
         identity = folder.name
         images = [f"/output/{identity}/{Path(path).name}" for path in rendered["images"]]
         metadata = json.loads((folder/"metadata.json").read_text(encoding="utf-8"))

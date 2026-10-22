@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+from html.parser import HTMLParser
 from pathlib import Path
 
 from discord_archive.editorial import DraftService
@@ -19,6 +20,25 @@ class FakeSettings:
 class FakeCredentials:
     def get(self,_kind):
         raise AssertionError("Evidence generation must not read model credentials")
+
+
+class WarningLocations(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.stack, self.locations = [], []
+
+    def handle_starttag(self, tag, attributes):
+        attributes = dict(attributes)
+        if tag == 'article' and 'data-archive-warnings' in attributes:
+            self.locations.append([(name, attrs.get('class', '')) for name, attrs in self.stack])
+        if tag not in {'meta', 'link', 'img', 'br', 'hr', 'input'}:
+            self.stack.append((tag, attributes))
+
+    def handle_endtag(self, tag):
+        for index in range(len(self.stack)-1, -1, -1):
+            if self.stack[index][0] == tag:
+                del self.stack[index:]
+                break
 
 
 def message(identity,content,author="owner",timestamp="2026-10-21T14:00:00Z",**extra):
@@ -49,6 +69,7 @@ class EditorialTests(unittest.TestCase):
             message(2,"等待确认后再考虑。",message_reference={"message_id":"1"}),
             message(3,"还有成交量条件。",timestamp="2026-10-21T14:01:00Z")])
         draft = self.service.generate({"scope":"latest"})
+        self.assertEqual(draft["layout"],"stacked")
         folder = self.root/"output"/draft["id"]
         manuscript = (folder/"manuscript.md").read_text()
         self.assertIn("在什么条件下？",manuscript)
@@ -155,17 +176,80 @@ class EditorialTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"四个"):
             self.service.generate({"layout":"board"})
 
-    def test_horizontal_selects_latest_changes_from_all_configured_channels(self):
+    def test_global_missing_context_warning_survives_every_panel_layout_once(self):
+        self.settings.value['channels'] = [{'id':str(identity), 'label':f'栏目{identity}', 'kind':'feed'}
+                                           for identity in [100,200,300,400]]
+        self.save([message(2,'等待量价确认。',message_reference={'message_id':'999'})])
+        for layout in ['stacked','horizontal','collage','board']:
+            with self.subTest(layout=layout):
+                draft = self.service.generate({'scope':'day','date':'2026-10-21','layout':layout})
+                document = Path(draft['path']).read_text()
+                self.assertEqual(len(draft['warnings']),1)
+                self.assertEqual(document.count(draft['warnings'][0]),1)
+                self.assertEqual(document.count('data-archive-warnings'),1)
+                self.assertNotIn('阅读提示',document)
+                self.assertNotIn('已经删除',document)
+                parsed = WarningLocations(); parsed.feed(document)
+                self.assertEqual(len(parsed.locations),1)
+                self.assertIn(('div','panel-grid'),parsed.locations[0])
+                self.assertIn(('section','content-panel'),parsed.locations[0])
+                warning = document.split('data-archive-warnings>',1)[1].split('</article>',1)[0]
+                self.assertIn('class="message-text"',warning)
+                self.assertIn('data-segment',warning)
+                self.assertEqual(document.count('class="content-panel"'),4 if layout == 'board' else 1)
+
+    def test_no_global_notice_is_added_to_normal_panel_documents(self):
+        self.settings.value['channels'] = [{'id':str(identity), 'label':f'栏目{identity}', 'kind':'feed'}
+                                           for identity in [100,200,300,400]]
+        self.save([message(2,'等待量价确认。')])
+        for layout in ['stacked','horizontal','collage','board']:
+            with self.subTest(layout=layout):
+                draft = self.service.generate({'scope':'day','date':'2026-10-21','layout':layout})
+                document = Path(draft['path']).read_text()
+                self.assertEqual(draft['warnings'],[])
+                self.assertNotIn('data-archive-warnings',document)
+                self.assertNotIn('归档提示',document)
+                self.assertNotIn('阅读提示',document)
+
+    def test_mobile_column_only_keeps_its_own_channel_warning(self):
+        self.settings.value['channels'] = [{'id':str(identity), 'label':f'栏目{identity}', 'kind':'feed'}
+                                           for identity in [100,200,300,400]]
+        self.save([message(2,'等待量价确认。',message_reference={'message_id':'999'})])
+        run = self.store.start_run('200')
+        self.store.ingest_messages('200',[message(3,'控制仓位。',channel_id='200')],run)
+        self.store.finish_run(run,True)
+        for layout in ['stacked','horizontal','collage','board']:
+            with self.subTest(layout=layout):
+                draft = self.service.generate({'scope':'day','date':'2026-10-21','layout':layout})
+                folder = Path(draft['path']).parent
+                self.assertEqual(len(draft['warnings']),1)
+                warning = draft['warnings'][0]
+                columns = {column['channel_id']:(folder/column['file']).read_text()
+                           for column in draft['single_columns']}
+                self.assertEqual(columns['100'].count(warning),1)
+                self.assertEqual(columns['100'].count('data-archive-warnings'),1)
+                for channel,document in columns.items():
+                    if channel != '100':
+                        self.assertNotIn(warning,document)
+                        self.assertNotIn('data-archive-warnings',document)
+                self.assertEqual(Path(draft['path']).read_text().count(warning),1)
+
+    def test_stacked_and_horizontal_select_latest_changes_from_all_configured_channels(self):
         self.settings.value['channels']=[{'id':'100','label':'示例栏目甲','kind':'feed'},{'id':'200','label':'答疑','kind':'qa'}]
         self.save([message(1,'仓位控制。')])
         run=self.store.start_run('200')
         self.store.ingest_messages('200',[{**message(2,'等待确认。'),'channel_id':'200'}],run)
         self.store.finish_run(run,True)
-        draft=self.service.generate({'scope':'latest','layout':'horizontal'})
-        self.assertEqual(draft['message_count'],2)
-        self.assertEqual(len(draft['selection']['run_ids']),2)
-        self.assertEqual(len(draft['single_columns']),2)
-        self.assertIn('data-layout="horizontal"',Path(draft['path']).read_text())
+        for layout in ['stacked','horizontal']:
+            with self.subTest(layout=layout):
+                draft=self.service.generate({'scope':'latest','layout':layout})
+                self.assertEqual(draft['message_count'],2)
+                self.assertEqual(len(draft['selection']['run_ids']),2)
+                self.assertEqual(len(draft['single_columns']),2)
+                document=Path(draft['path']).read_text()
+                self.assertIn(f'data-layout="{layout}"',document)
+                self.assertIn('data-kind="feed"',document)
+                self.assertIn('data-kind="qa"',document)
 
     def test_media_manifest_embeds_local_image_and_preserves_full_source_id(self):
         media = self.root/"data"/"media"

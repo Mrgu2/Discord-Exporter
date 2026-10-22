@@ -46,8 +46,9 @@ try{
     const visible=await page.locator('body').innerText();
     assert.ok(!visible.includes('America/New_York'),'Raw market timezone leaked into the normal flow');
     assert.ok(!visible.includes('频道 ID'),'Normal operation exposed channel IDs');
-    assert.equal(await page.locator('#draft-layout').inputValue(),'horizontal','Horizontal export should be the default');
-    assert.match(await page.locator('#draft-options-label').textContent(),/横向无缝长图/);
+    assert.equal(await page.locator('#draft-layout').inputValue(),'stacked','Stacked export should be the default');
+    assert.match(await page.locator('#draft-options-label').textContent(),/上下分区拼图/);
+    assert.equal(await page.locator('#draft-layout option[value="horizontal"]').count(),1,'Horizontal export must remain selectable');
     await page.locator('.advanced-settings > summary').click();
     await page.locator('#timezone').waitFor({state:'visible'});
     assert.equal(await page.locator('#timezone').evaluate(element=>element.tagName),'SELECT');

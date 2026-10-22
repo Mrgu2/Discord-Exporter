@@ -452,9 +452,9 @@
     const button = $('config-save-button');
     try {
       const timezone = $('timezone').value.trim();
-      if (timezone !== 'auto') { try { new Intl.DateTimeFormat('zh-CN', { timeZone: timezone }); } catch { throw new Error('显示时区无效，请填写 auto 或 IANA 时区名称。'); } }
+      if (timezone !== 'auto') { try { new Intl.DateTimeFormat('zh-CN', { timeZone: timezone }); } catch { throw new Error('时间显示设置无效，请重新选择。'); } }
       const marketTimezone = $('market-timezone').value.trim();
-      try { new Intl.DateTimeFormat('zh-CN', { timeZone: marketTimezone }); } catch { throw new Error('市场时区无效，请填写 America/New_York 这样的 IANA 时区名称。'); }
+      try { new Intl.DateTimeFormat('zh-CN', { timeZone: marketTimezone }); } catch { throw new Error('自动保存的时间设置无效，请刷新页面后重试。'); }
       const authorId = $('target-author').value.trim().replace(/^<@!?(\d+)>$/, '$1');
       const targetMessageURL = $('target-message-url').value.trim();
       if (!authorId && !targetMessageURL) throw new Error('请填写群主用户 ID 或粘贴他的一条发言链接。');

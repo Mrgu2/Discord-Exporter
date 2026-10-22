@@ -360,6 +360,9 @@
     const actions = node('div', 'draft-actions');
     if (available) {
       const preview = node('a', 'text-button', '打开 ↗'); preview.href = url; preview.target = '_blank'; preview.rel = 'noopener'; actions.append(preview);
+      if (draft.manuscript_url) {
+        const manuscript = node('a', 'text-button', '文字稿'); manuscript.href = draft.manuscript_url; manuscript.download = ''; actions.append(manuscript);
+      }
       const images = Array.isArray(draft.images) ? draft.images : [];
       if (images.length) {
         const viewImages = node('button', 'text-button', '查看长图'); viewImages.type = 'button';

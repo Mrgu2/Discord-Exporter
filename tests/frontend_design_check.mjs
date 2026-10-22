@@ -24,7 +24,7 @@ function fixture() {
     connectivity: {online: true}, credentials: {discord: true, model: false},
     archive: {message_count: 84, channel_count: 5, attachment_count: 2, attachment_failures: 0},
     drafts: [
-      {id: 'fictional-one', title: '演示 · 10 月 21 日尾盘答疑', created_at: '2026-10-22T01:20:00Z', status: 'ready', scope: 'day', date: '2026-10-21', message_count: 46, mode: 'evidence', layout: 'stacked'},
+      {id: 'fictional-one', title: '演示 · 10 月 21 日尾盘答疑', created_at: '2026-10-22T01:20:00Z', status: 'ready', scope: 'day', date: '2026-10-21', message_count: 46, mode: 'evidence', layout: 'stacked', manuscript_url: '/output/fictional-one/manuscript.md'},
       {id: 'fictional-two', title: '演示 · 多个频道的每周回顾与后续补充核对记录', created_at: '2026-10-21T13:40:00Z', status: 'ready', scope: 'latest', message_count: 32, mode: 'evidence', layout: 'qa'},
       {id: 'fictional-failed', title: '演示 · 未完成的稿件', created_at: '2026-10-21T12:00:00Z', status: 'failed', error: '演示错误：请重试生成。'}
     ],
@@ -57,6 +57,11 @@ try {
     assert.equal(await page.locator('#draft-layout').inputValue(), 'stacked');
     assert.match(await page.locator('#draft-options-label').innerText(), /上下分区拼图/);
     assert.match(await page.locator('#recent-drafts .draft-row').first().innerText(), /上下分区拼图/);
+    const manuscript = page.locator('#recent-drafts .draft-row').first().getByRole('link', {name: '文字稿', exact: true});
+    assert.equal(await manuscript.getAttribute('href'), '/output/fictional-one/manuscript.md');
+    assert.equal(await manuscript.getAttribute('download'), '');
+    assert.equal(await manuscript.evaluate(link => link.previousElementSibling.textContent), '打开 ↗');
+    assert.equal(await page.locator('#recent-drafts .draft-row').nth(1).getByRole('link', {name: '文字稿', exact: true}).count(), 0);
     assert.equal(await page.locator('#draft-layout option[value="horizontal"]').count(), 1);
     assert.equal(await page.locator('#capture-button').isEnabled(), true);
     assert.equal(await page.locator('#draft-button').isEnabled(), true);

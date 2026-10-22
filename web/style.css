@@ -125,6 +125,7 @@ details summary::-webkit-details-marker { display: none; }
 .field { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; min-width: 0; }
 .field label { color: var(--ink); font-size: 13px; line-height: 1.7; }
 .field input, .field textarea, .field select { width: 100%; border: 1px solid #d7dfec; background: var(--surface); color: var(--ink); border-radius: var(--radius-control); padding: 10px 12px; font-size: 14px; line-height: 1.5; min-height: 42px; min-width: 0; }
+.field input[type="date"] { -webkit-appearance: none; appearance: none; box-sizing: border-box; min-inline-size: 0; max-inline-size: 100%; }
 .field input::placeholder, .field textarea::placeholder { color: var(--muted); }
 .field textarea { resize: vertical; }
 .field input:focus-visible, .field textarea:focus-visible, .field select:focus-visible { border-color: var(--accent); outline-offset: 2px; }

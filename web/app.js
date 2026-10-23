@@ -16,6 +16,7 @@
   let currentView = 'workspace';
   let draftSearch = '';
   let renderPending = new Set();
+  let remoteRenderJobs = [];
   let lastJobSeen = null;
   let draftDatesTouched = false;
   let savingChannels = false;
@@ -132,6 +133,7 @@
     configInitialized = true;
   }
   function renderState(data) {
+    remoteRenderJobs = data.state?.render_jobs || [];
     snapshot = data;
     const config = data.config || publicConfig;
     hydrateConfig(config);
@@ -355,6 +357,7 @@
     if (draft.mode === 'model') meta.append(node('span', '', '模型整理'));
     if (draft.layout) meta.append(node('span', '', { stacked: '上下分区拼图', horizontal: '左右分区高清图', collage: '自动拼版', board: '四栏拼版', qa: '问答页' }[draft.layout] || draft.layout));
     if (draft.render_scale === 2) meta.append(node('span', '', '2× HiDPI'));
+    if (draft.audio?.complete) meta.append(node('span', '', `${draft.audio.complete} 条语音转写`));
     if (Array.isArray(draft.warnings) && draft.warnings.length) meta.append(node('span', 'draft-state', `${draft.warnings.length} 项待核对`));
     if (draft.error) meta.append(node('span', 'draft-state failed', typeof draft.error === 'string' ? draft.error : draft.error.message || '生成失败'));
     info.append(title, meta); row.append(info);
@@ -368,15 +371,20 @@
       if (images.length) {
         const viewImages = node('button', 'text-button', '查看长图'); viewImages.type = 'button';
         viewImages.addEventListener('click', () => openPreview(images, draft.title || '稿件长图')); actions.append(viewImages);
+        const download = node('a','text-button',images.length === 1 ? '下载高清图' : '下载第 1 张');
+        download.href = images[0]; download.download = `${draft.title || '稿件'}-高清.png`; actions.append(download);
       }
-      const columnImages = (Array.isArray(draft.single_columns) ? draft.single_columns : []).flatMap((column) => Array.isArray(column.images) ? column.images : []);
-      if (columnImages.length) {
-        const viewColumns = node('button', 'text-button', '分栏图'); viewColumns.type = 'button';
-        viewColumns.addEventListener('click', () => openPreview(columnImages, `${draft.title || '稿件'} · 分栏图`)); actions.append(viewColumns);
+      const columns = Array.isArray(draft.single_columns) ? draft.single_columns : [];
+      if (columns.length) {
+        const readyColumns = columns.filter(column => column.images?.length);
+        const viewColumns = node('button', 'text-button', readyColumns.length === columns.length ? '分栏图' : renderBusy(draft,'mobile') ? '分栏图生成中…' : '生成分栏图'); viewColumns.type = 'button';
+        viewColumns.disabled = renderBusy(draft,'mobile');
+        viewColumns.addEventListener('click', () => readyColumns.length === columns.length
+          ? window.ArchivePreview?.openGroups(readyColumns,`${draft.title || '稿件'} · 分栏图`) : renderImage(draft,'mobile')); actions.append(viewColumns);
       }
       const imageReady = Boolean(images.length || first(draft.image_path, draft.long_image_path, draft.image_url, draft.png_path, draft.rendered_at));
-      const render = node('button', 'text-button', renderPending.has(getDraftId(draft)) ? '图片生成中…' : imageReady ? '更新图片' : '生成图片');
-      render.type = 'button'; render.disabled = renderPending.has(getDraftId(draft)); render.addEventListener('click', () => renderImage(draft)); actions.append(render);
+      const render = node('button', 'text-button', renderBusy(draft,'main') ? '图片生成中…' : imageReady ? '更新图片' : '生成图片');
+      render.type = 'button'; render.disabled = renderBusy(draft,'main'); render.addEventListener('click', () => renderImage(draft)); actions.append(render);
     } else actions.append(node('span', `draft-state${failed ? ' failed' : ''}`, statusNames[draft.status] || draft.status || '准备中'));
     row.append(actions);
     return row;
@@ -387,7 +395,7 @@
   }
   function renderDrafts(force = false) {
     const drafts = Array.isArray(snapshot?.drafts) ? snapshot.drafts : [];
-    const signature = JSON.stringify(drafts) + draftSearch + [...renderPending].join(',');
+    const signature = JSON.stringify(drafts) + draftSearch + [...renderPending].join(',') + JSON.stringify(remoteRenderJobs);
     if (!force && signature === lastDraftSignature) return;
     lastDraftSignature = signature;
     const recent = drafts.slice(0, 3);
@@ -547,15 +555,26 @@
     catch (error) { showToast(error.message, true); }
     finally { pendingAction = null; await refresh(); }
   }
-  async function renderImage(draft) {
+  function renderBusy(draft,target) {
     const id = getDraftId(draft);
-    if (!id || renderPending.has(id)) return;
-    renderPending.add(id); renderDrafts(true);
+    return renderPending.has(`${id}:${target}`) || remoteRenderJobs.some(job => job.draft_id === id && [target,'all'].includes(job.target || 'main'));
+  }
+  async function renderImage(draft,target='main') {
+    const id = getDraftId(draft);
+    if (!id || renderBusy(draft,target)) return;
+    const key = `${id}:${target}`;
+    let jobId;
+    renderPending.add(key); renderDrafts(true);
     try {
-      const result = await post('/api/render', { draft_id: id });
-      showToast(result.queued || busyStatuses.has(result.status) ? '长图任务已提交，完成后在稿件预览中下载。' : '长图已生成，可在稿件预览中查看和下载。');
+      const result = await post('/api/render', { draft_id: id,target });
+      jobId = result.id;
+      showToast(result.deduplicated ? '这份图片已经在生成。' : target === 'mobile' ? '正在生成分栏图，完成后可按频道查看。' : '正在生成高清主图，完成后可直接下载。');
     } catch (error) { showToast(error.message, true); }
-    finally { renderPending.delete(id); await refresh(); renderDrafts(true); }
+    finally {
+      await refresh(); renderPending.delete(key); renderDrafts(true);
+      if (jobId && snapshot?.state?.last_job_id === jobId && snapshot.state.last_job_status === 'success')
+        showToast(target === 'mobile' ? '分栏图已就绪。' : '高清图已就绪。');
+    }
   }
   function updateClock() {
     text('current-time', dateTime(new Date(), true));

@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .collector import AccessDenied, AuthRequired, CaptureService, DiscordAPIError, DiscordClient
 from .media import MediaArchive
+from .speech import SpeechArchive
 from .scheduler import due, market_day
 from .settings import atomic_json, message_location
 from .store import parse_time, utc_now
@@ -33,8 +34,10 @@ class Worker:
             'permission_denied_channels': previous.get('permission_denied_channels', []), 'last_warning': previous.get('last_warning'),
         }
         self.media = MediaArchive(root)
+        self.speech = SpeechArchive(root,self.settings.read().get('speech'))
         if self.drafts is not None:
             self.drafts.media = self.media
+            self.drafts.speech = self.speech
         interrupted = self.store.recover_interrupted_runs('服务中断后自动恢复；上次成功位置保持不变')
         if interrupted or previous.get('active_job'):
             self.state.update(offline_since=previous.get('last_heartbeat') or utc_now(), retry_at=utc_now(), last_error='上次任务被中断，准备补采')
@@ -44,6 +47,7 @@ class Worker:
         if deadline and deadline > datetime.now(timezone.utc):
             self.state['retry_at'] = deadline.isoformat()
         self._queued_capture = False
+        self._render_jobs = {}
         self._last_schedule_slot = None
 
     def persist(self):
@@ -57,6 +61,15 @@ class Worker:
 
     def submit(self, kind, payload=None):
         with self.lock:
+            if kind == 'render':
+                payload = {**(payload or {})}
+                payload.setdefault('target','main')
+                if payload['target'] not in {'main','mobile','all'}:
+                    raise ValueError('图片类型须为 main、mobile 或 all')
+                active = self.state.get('active_job') or {}
+                for (draft,target),identifier in self._render_jobs.items():
+                    if draft == payload.get('draft_id') and target in {payload['target'],'all'}:
+                        return {'id':identifier,'status':'running' if active.get('id') == identifier else 'queued','type':'render','deduplicated':True}
             if self.jobs.qsize() >= 20:
                 raise ValueError('等待任务过多，请稍后重试')
             if kind == 'connect_browser' and ((self.state.get('active_job') or {}).get('type') == 'connect_browser' or any(job['type'] == 'connect_browser' for job in list(self.jobs.queue))):
@@ -69,6 +82,8 @@ class Worker:
                     raise ValueError('已有保存任务在进行或等待')
                 self._queued_capture = True
             identifier = uuid.uuid4().hex
+            if kind == 'render':
+                self._render_jobs[(payload.get('draft_id'),payload['target'])] = identifier
             self.jobs.put({'id': identifier, 'type': kind, 'payload': payload or {}})
             return {'id': identifier, 'status': 'queued', 'type': kind}
 
@@ -133,6 +148,18 @@ class Worker:
             self.state.update(last_success_at=utc_now(), last_online_at=utc_now(), offline_since=None, retry_at=None, rate_limit_until=None, failures=0, requires_attention=False, last_error=None)
             warnings = [value for value in (self.state.get('target_resolution_warning'), result.get('warning')) if value]
             self.state.update(permission_denied_channels=result.get('permission_denied_channels', []), last_warning=' '.join(warnings) or None)
+        def speech_progress(message):
+            with self.lock:
+                if self.state.get('active_job'):
+                    self.state['active_job']['message'] = message
+                self.persist()
+        # All network pages and attachments are durable before any inference.
+        # An ASR failure never turns a successful capture into a network retry.
+        self.speech.options = config.get('speech') or {}
+        try:
+            result['audio'] = self.speech.process_saved(self.media,progress=speech_progress)
+        except Exception:
+            result['audio'] = {'failed':True,'error':'语音转写未完成，已保存的消息和音频不受影响；重新出稿会重试'}
         return result
 
     def loop(self):
@@ -159,7 +186,9 @@ class Worker:
             except queue.Empty:
                 continue
             with self.lock:
-                self.state.update(status='running', active_job={'type': job['type'], 'id': job['id'], 'message': {'capture': '正在保存频道与回复上下文', 'draft': '正在生成稿件', 'render': '正在生成长图', 'import': '正在导入存档', 'connect_browser': '请在新打开的 Discord 窗口中登录'}.get(job['type'], '处理中')})
+                self.state.update(status='running', active_job={'type': job['type'], 'id': job['id'],
+                    **({key:job['payload'].get(key) for key in ('draft_id','target')} if job['type'] == 'render' else {}),
+                    'message': {'capture': '正在保存频道与回复上下文', 'draft': '正在生成稿件', 'render': '正在生成分栏图' if job['payload'].get('target') == 'mobile' else '正在生成高清主图', 'import': '正在导入存档', 'connect_browser': '请在新打开的 Discord 窗口中登录'}.get(job['type'], '处理中')})
                 self.persist()
             try:
                 if job['type'] == 'capture':
@@ -168,7 +197,7 @@ class Worker:
                 elif job['type'] == 'draft':
                     result = self.drafts.generate(job['payload'])
                 elif job['type'] == 'render':
-                    result = self.drafts.render(job['payload']['draft_id'])
+                    result = self.drafts.render(job['payload']['draft_id'],target=job['payload'].get('target','main'),force=job['payload'].get('force',False))
                 elif job['type'] == 'import':
                     result = self.store.import_dce(job['payload']['path'])
                 elif job['type'] == 'connect_browser':
@@ -182,11 +211,11 @@ class Worker:
                     raise ValueError('未知任务')
                 with self.lock:
                     partial = job['type'] == 'capture' and result.get('status') == 'partial'
-                    self.state.update(last_result=result, last_job_status='partial' if partial else 'success', last_job_error=None)
+                    self.state.update(last_result=result, last_job_id=job['id'], last_job_status='partial' if partial else 'success', last_job_error=None)
             except Exception as exc:
                 with self.lock:
                     safe = str(exc) if isinstance(exc, (DiscordAPIError, ValueError, RuntimeError)) else '任务未完成，请查看本机日志或配置'
-                    self.state.update(last_job_status='failed', last_job_error=safe)
+                    self.state.update(last_job_id=job['id'], last_job_status='failed', last_job_error=safe)
                     if job['type'] == 'capture':
                         failures = self.state.get('failures', 0) + 1
                         if isinstance(exc, (AuthRequired, AccessDenied)):
@@ -204,6 +233,8 @@ class Worker:
                     self.state.update(active_job=None, status='idle')
                     if job['type'] == 'capture':
                         self._queued_capture = False
+                    if job['type'] == 'render':
+                        self._render_jobs.pop((job['payload'].get('draft_id'),job['payload'].get('target','main')),None)
                     self.persist()
                 self.jobs.task_done()
 
@@ -213,6 +244,10 @@ class Worker:
         now = datetime.now(timezone.utc)
         offline = parse_time(state.get('offline_since'))
         state['queue_length'] = self.jobs.qsize()
+        with self.jobs.mutex:
+            queued = list(self.jobs.queue)
+        state['render_jobs'] = [{key:job.get(key) for key in ('id','type','draft_id','target')}
+            for job in [state.get('active_job') or {}, *[{**job,**job['payload']} for job in queued]] if job.get('type') == 'render']
         config = self.settings.read()
         state['market_day'] = market_day(now, config['market_timezone'], config.get('day_boundary_hour', 4))
         # Search the next day's minute slots in UTC, including DST transitions.

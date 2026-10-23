@@ -53,7 +53,7 @@ class ServerBoundaryTests(unittest.TestCase):
         handler=self.handler('/api/render',{'draft_id':identity})
         handler.mutation()
         self.assertEqual(handler.send.call_args.args[0],202)
-        self.app.worker.submit.assert_called_once_with('render',{'draft_id':identity})
+        self.app.worker.submit.assert_called_once_with('render',{'draft_id':identity,'target':'main'})
 
     def test_path_traversal_and_dns_rebinding_rejected(self):
         handler=self.handler('/api/status',host='evil.invalid:8765',method='GET')

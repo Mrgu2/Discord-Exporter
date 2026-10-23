@@ -235,6 +235,11 @@ def make_handler(application):
                         data['draft_id'] = str(uuid.UUID(str(data.get('draft_id', ''))))
                     except ValueError:
                         raise ValueError('稿件 ID 无效') from None
+                    data.setdefault('target','main')
+                    if data['target'] not in {'main','mobile','all'}:
+                        raise ValueError('图片类型须为 main、mobile 或 all')
+                    if 'force' in data and not isinstance(data['force'],bool):
+                        raise ValueError('force 须为布尔值')
                     return self.send(202, app.worker.submit('render', data))
                 if path == '/api/import':
                     if not self.local():

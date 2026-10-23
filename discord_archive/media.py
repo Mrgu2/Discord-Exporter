@@ -43,7 +43,8 @@ class MediaArchive:
                 if existing.get('status') == 'saved' and (self.directory / existing['file']).is_file():
                     continue
                 entry = {'channel_id': channel, 'message_id': identity, 'filename': attachment.get('filename', ''), 'run_id': run_id,
-                         'content_type': attachment.get('content_type'), 'is_image': attachment.get('is_image'), 'source_type': attachment.get('source_type')}
+                         'content_type': attachment.get('content_type'), 'is_image': attachment.get('is_image'),
+                         'is_audio': attachment.get('is_audio'), 'source_type': attachment.get('source_type')}
                 try:
                     if not download:
                         entry['status'] = 'not_requested'

@@ -9,6 +9,13 @@ CDN_HOSTS = {'cdn.discordapp.com', 'media.discordapp.net', 'cdn.discordapp.net',
              'images-ext-1.discordapp.net', 'images-ext-2.discordapp.net'}
 RASTER_TYPES = {'image/png', 'image/apng', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif', 'image/bmp'}
 RASTER_SUFFIXES = {'.png', '.apng', '.jpg', '.jpeg', '.gif', '.webp', '.avif', '.bmp'}
+AUDIO_SUFFIXES = {'.ogg', '.opus', '.mp3', '.wav', '.m4a', '.aac', '.flac', '.webm'}
+
+
+def is_audio_asset(asset):
+    kind = str(asset.get('content_type') or '').lower().split(';')[0]
+    return kind.startswith('audio/') or (not kind.startswith(('image/', 'video/'))
+        and PurePosixPath(asset.get('filename') or asset.get('file') or '').suffix.lower() in AUDIO_SUFFIXES)
 
 
 def allowed_media_url(value):
@@ -63,7 +70,8 @@ def iter_message_assets(message):
             is_image = False
         assets.append({**asset, 'id': str(identity), 'filename': filename, 'url': source_url,
                        'download_url': url or '', 'content_type': content_type,
-                       'is_image': is_image, 'source_type': kind, 'source_label': label})
+                       'is_image': is_image, 'is_audio': is_audio_asset({'content_type':content_type,'filename':filename}),
+                       'source_type': kind, 'source_label': label})
     def visit(current, prefix='', depth=0):
         if depth > 5:
             return

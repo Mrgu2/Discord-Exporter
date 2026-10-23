@@ -18,6 +18,8 @@ from .media import MediaArchive
 from .readability import choose_reading_groups, clean_reading_text
 from .scheduler import day_bounds, market_day
 from .settings import atomic_json
+from .speech import SpeechArchive
+from . import render_cache
 from .store import iso_time, parse_time
 
 
@@ -145,14 +147,26 @@ class DraftService:
         warnings = list(dict.fromkeys(warning for bundle in bundles for warning in bundle["warnings"]))
         all_groups = [group for panel in panels for group in panel["groups"]] if layout != "qa" else groups
         media_archive = getattr(self, 'media', None) or MediaArchive(self.root)
+        self.media = media_archive
         source_messages = {_key(message): message for group in all_groups for message in group['messages']}
         for channel in selection['channels']:
             media_archive.archive_page(channel, None, [message for message in source_messages.values() if message['channel_id'] == channel])
+        speech = getattr(self,'speech',None) or SpeechArchive(self.root,config.get('speech'))
+        speech.options = config.get('speech') or {}
+        audio_keys = {f'{message["channel_id"]}/{message["message_id"]}/{asset["id"]}'
+            for message in source_messages.values() for asset in iter_message_assets(message) if asset.get('is_audio')}
+        audio_summary = speech.process_saved(media_archive,keys=audio_keys)
+        speech.attach([groups,panels,items,bundles],media_archive)
         missing_assets = {_key(message) for message in source_messages.values()
             if any(self._media(message,attachment).get("status") != "saved" for attachment in iter_message_assets(message))}
         channels_with_gaps = {channel for channel in selection["channels"] if self.store.channel_status(channel)["coverage_gaps"]}
         attachment_warning = "部分附件未保存在本地，离线阅读前请核对下载结果。"
         capture_warning = "归档存在可能的留存缺口，当前稿件只覆盖实际保存到的内容。"
+        speech_warning = '部分语音尚未转写，原音频已保留；重新出稿可重试。'
+        pending_audio_channels = {message['channel_id'] for message in source_messages.values()
+            if any(item['status'] != 'complete' for item in message.get('audio_transcripts',[]))}
+        if pending_audio_channels:
+            warnings.append(speech_warning)
         if missing_assets:
             warnings.append(attachment_warning)
         if channels_with_gaps:
@@ -162,6 +176,8 @@ class DraftService:
                 panel["warnings"].append(attachment_warning)
             if panel["channel_id"] in channels_with_gaps:
                 panel["warnings"].append(capture_warning)
+            if panel['channel_id'] in pending_audio_channels:
+                panel['warnings'].append(speech_warning)
         title = str(request.get("title") or selection["label"]).strip()[:150]
         source_groups, source_panels = all_groups, panels
         decisions = []
@@ -193,7 +209,8 @@ class DraftService:
             "layout":layout,"single_columns":[],
             "manuscript_url":f"/output/{identity}/manuscript.md","evidence_url":f"/output/{identity}/evidence.json",
             "archive_url":f"/output/{identity}/archive.html","archive_manuscript_url":f"/output/{identity}/archive.md",
-            "date":request.get("date"),"market_timezone":config.get("market_timezone","America/New_York")}
+            "date":request.get("date"),"market_timezone":config.get("market_timezone","America/New_York"),
+            "audio":audio_summary}
         evidence = {"schema_version":1,"title":title,"created_at":now,"selection":selection,
             "target_author_id":author,"warnings":warnings,"groups":source_groups,"contexts":items,"panels":source_panels,"layout":layout,
             "reading":{"decisions":decisions,"visible_panels":panels,"visible_groups":all_groups}}
@@ -223,7 +240,8 @@ class DraftService:
     def _media(self,message,attachment):
         path = self.root/"data"/"media"/"manifest.json"
         try:
-            manifest = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+            archive = getattr(self,'media',None)
+            manifest = archive.manifest if archive is not None else (json.loads(path.read_text(encoding="utf-8")) if path.exists() else {})
         except (OSError,ValueError):
             manifest = {}
         identity = attachment.get("id")
@@ -347,20 +365,35 @@ class DraftService:
             if reading:
                 body = re.sub(r'\*\*(.+?)\*\*',r'<strong>\1</strong>',body,flags=re.S)
             return f'<section class="block {extra_class}" data-segment{evidence_attr}>'+(f'<div class="block-label">{html.escape(label)}</div>' if label else '') + (f'<div class="source-meta" data-render-meta="{html.escape(render_meta,quote=True)}">{html.escape(meta)}</div>' if meta else "") + (f'<p class="message-text">{body}</p>' if body else '')+'</section>'
+        def message_blocks(label,message,extra_class=''):
+            parts = [block(label,message['content'],message,extra_class=extra_class)]
+            assets = {asset['id']:asset for asset in iter_message_assets(message)}
+            for transcript in message.get('audio_transcripts',[]):
+                complete = transcript['status'] == 'complete'
+                text = transcript.get('text') or ('（未识别到语音文字）' if complete else transcript.get('error') or '原音频已保留，重新出稿可重试。')
+                rendered = block('语音转写' if complete else '语音待转写',text,message,extra_class=extra_class)
+                asset = assets.get(transcript['asset_id'])
+                media = self._media(message,asset) if asset else {}
+                if media.get('status') == 'saved':
+                    url = html.escape(media['url'],quote=True)
+                    rendered = rendered.replace('</section>',f'<div class="audio-playback"><audio controls preload="none" src="{url}"></audio><a href="{url}" download>原音频</a></div></section>')
+                    markdown.extend([f'[原音频]({media["url"]})',''])
+                parts.append(rendered)
+            return ''.join(parts)
         for index,group in enumerate(groups,1):
             heading = f'{index:02d} · {_time(group["answers"][0],zone).split()[-1]}' if reading else f'{index:02d}　{group["title"]}'
             if not reading:
                 markdown.extend([f"## {heading}",""])
             parts = []
             for message in group["context"]:
-                parts.append(block("原问题 / 回复背景" if message["author_id"] != group["answers"][0]["author_id"] else "此前群主发言",message["content"],message))
+                parts.append(message_blocks("原问题 / 回复背景" if message["author_id"] != group["answers"][0]["author_id"] else "此前群主发言",message))
             for missing in group["missing_context"]:
                 text = '原问题未保存。' if reading else f'原消息 {missing["channel_id"]}/{missing["message_id"]} 未保存，无法核实原问题。'
                 parts.append(block("上下文缺失",text,extra_class="note"))
             for answer_index,message in enumerate(group["answers"]):
-                parts.append(block("群主原话" if answer_index == 0 else "群主补充",message["content"],message,extra_class="answer"))
+                parts.append(message_blocks("群主原话" if answer_index == 0 else "群主补充",message,extra_class="answer"))
             for message in group["followups"]:
-                parts.append(block("追问 / 后续对话",message["content"],message))
+                parts.append(message_blocks("追问 / 后续对话",message))
             for version in group["version_history"]:
                 parts.append(block("编辑前已保存版本",version["content"],version["message"],extra_class="note"))
             for message in group['messages']:
@@ -368,6 +401,8 @@ class DraftService:
                     parts.append(block('转发内容',forwarded,message))
             attachments = [(message,attachment) for message in group["messages"] for attachment in iter_message_assets(message)]
             for message,attachment in attachments:
+                if attachment.get('is_audio'):
+                    continue
                 filename = attachment.get("filename") or attachment.get("fileName") or "附件"
                 link = attachment.get("url") or attachment.get("proxy_url") or attachment.get("proxyUrl") or "未保存链接"
                 media = self._media(message,attachment)
@@ -414,13 +449,27 @@ class DraftService:
                 continue
         return sorted(result,key=lambda draft:draft.get("created_at",""),reverse=True)
 
-    def render(self, draft_id):
+    def render(self, draft_id, target='all', force=False):
+        if target not in {'all','main','mobile'}:
+            raise ValueError('图片类型须为 main、mobile 或 all')
         folder = self._folder(draft_id)
         node = shutil.which("node")
         if not node:
             raise ValueError("生成长图需要 Node.js，请先安装 Node.js 后重试。")
         script = Path(__file__).resolve().parent.parent/"scripts"/"render.mjs"
-        def render_file(input_path,output_path):
+        metadata = json.loads((folder/"metadata.json").read_text(encoding="utf-8"))
+        cache_path = folder/'render-cache.json'
+        try:
+            cache = json.loads(cache_path.read_text()) if cache_path.exists() else {}
+        except (OSError,ValueError):
+            cache = {}
+        hits = []
+        def render_file(input_path,output_path,key):
+            signature = render_cache.fingerprint(input_path,self.root)
+            cached = None if force else render_cache.reuse(cache.get(key),output_path,signature)
+            if cached:
+                hits.append(key)
+                return cached
             result = subprocess.run([node,str(script),str(input_path),str(output_path)],capture_output=True,text=True,timeout=180)
             if result.returncode:
                 safe_error = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "浏览器渲染失败"
@@ -428,25 +477,35 @@ class DraftService:
             rendered = json.loads(result.stdout)
             # Older renderer results describe 1x pixels; never label them HiDPI.
             rendered.setdefault('render_scale',1)
+            saved = render_cache.receipt(rendered,output_path,signature)
+            if saved:
+                cache[key] = saved
+                atomic_json(cache_path,cache)
             return rendered
-        rendered = render_file(folder/"index.html",folder)
         verification_keys=('source_coverage','image_coverage','text_coverage','reading_order','topic_integrity','body_font_sizes','blank_ratio','structure','raster_tiles','bands','render_scale','css_dimensions','pixel_font_sizes')
         identity = folder.name
-        images = [f"/output/{identity}/{Path(path).name}" for path in rendered["images"]]
-        metadata = json.loads((folder/"metadata.json").read_text(encoding="utf-8"))
-        for column in metadata.get("single_columns",[]):
+        rendered = {}
+        if target in {'all','main'}:
+            rendered = render_file(folder/"index.html",folder,'main')
+            images = [f"/output/{identity}/{Path(path).name}" for path in rendered["images"]]
+            metadata.update(images=images,rendered_at=iso_time(),image_url=images[0] if images else None,
+                layout_mode=rendered.get("layout_mode"),image_dimensions=rendered.get("dimensions",[]),image_coverage=rendered.get('image_coverage'),
+                render_scale=rendered['render_scale'],css_dimensions=rendered.get('css_dimensions',[]),pixel_font_sizes=rendered.get('pixel_font_sizes',[]),
+                render_verification={key:rendered.get(key) for key in verification_keys})
+            # Publish the main export before optional phone columns. A failure
+            # in a later column cannot hide an already verified main image.
+            atomic_json(folder/"metadata.json",metadata)
+        for column in metadata.get("single_columns",[]) if target in {'all','mobile'} else []:
             subfolder = folder/f'mobile-{column["channel_id"]}'
-            single = render_file(folder/column["file"],subfolder)
+            single = render_file(folder/column["file"],subfolder,f'mobile:{column["channel_id"]}')
             column["images"] = [f'/output/{identity}/{subfolder.name}/{Path(path).name}' for path in single["images"]]
             column['image_coverage'] = single.get('image_coverage')
             column.update(image_dimensions=single.get('dimensions',[]),render_scale=single['render_scale'],
                 css_dimensions=single.get('css_dimensions',[]),pixel_font_sizes=single.get('pixel_font_sizes',[]))
             column['render_verification'] = {key:single.get(key) for key in verification_keys}
-        metadata.update(images=images,rendered_at=iso_time(),image_url=images[0] if images else None,
-            layout_mode=rendered.get("layout_mode"),image_dimensions=rendered.get("dimensions",[]),image_coverage=rendered.get('image_coverage'),
-            render_scale=rendered['render_scale'],css_dimensions=rendered.get('css_dimensions',[]),pixel_font_sizes=rendered.get('pixel_font_sizes',[]),
-            render_verification={key:rendered.get(key) for key in verification_keys})
+            atomic_json(folder/"metadata.json",metadata)
         atomic_json(folder/"metadata.json",metadata)
-        return {"images":images,"dimensions":rendered.get("dimensions",[]),"layout_mode":rendered.get("layout_mode"),
-            "render_scale":metadata['render_scale'],"css_dimensions":metadata['css_dimensions'],"pixel_font_sizes":metadata['pixel_font_sizes'],
-            "panel_heights":rendered.get("panel_heights",[]),"single_columns":metadata.get("single_columns",[]),"draft":metadata}
+        return {"images":metadata.get('images',[]),"dimensions":metadata.get('image_dimensions',[]),"layout_mode":metadata.get('layout_mode'),
+            "render_scale":metadata.get('render_scale'),"css_dimensions":metadata.get('css_dimensions',[]),"pixel_font_sizes":metadata.get('pixel_font_sizes',[]),
+            "panel_heights":rendered.get("panel_heights",[]),"single_columns":metadata.get("single_columns",[]),
+            "cache_hits":hits,"target":target,"draft":metadata}

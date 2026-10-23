@@ -39,7 +39,7 @@ async function main() {
     await page.goto(pathToFileURL(input).href, {waitUntil:'load'});
     // Apply the current export design to new and previously saved manuscripts,
     // without rewriting their source HTML, Markdown or evidence files.
-    await page.addStyleTag({content: fs.readFileSync(new URL('../web/manuscript.css', import.meta.url), 'utf8')});
+    await page.addStyleTag({content: fs.readFileSync(new URL('../web/manuscript.css', import.meta.url), 'utf8')+'\n.audio-playback{display:none!important}'});
     await page.evaluate(async () => {
       for(const image of document.querySelectorAll('img[data-local-src]')) image.src=new URL(image.dataset.localSrc,location.href).href;
       await Promise.all([...document.images].map(image=>image.complete ? Promise.resolve() : new Promise(resolve=>{image.onload=resolve;image.onerror=resolve;})));

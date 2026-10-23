@@ -1,7 +1,8 @@
 /* Local image viewer: anchored zoom, bounded drag, pinch, and native dialog focus. */
 (() => {
   'use strict';
-  let dialog, stage, picture, caption, percent, download, message, lastFocus;
+  let dialog, stage, picture, caption, percent, download, message, lastFocus, channelSelect;
+  let groups = [];
   let pages = [], index = 0, scale = 1, tx = 0, ty = 0, fitWidth = 0, fitHeight = 0;
   let pointers = new Map(), gesture = null, frame = 0, generation = 0;
   const clamp = (value, lower, upper) => Math.min(upper, Math.max(lower, value));
@@ -62,6 +63,8 @@
     for(const [action,text] of buttons){const button=element('button','',text);button.type='button';button.dataset.action=action;button.setAttribute('aria-label',{in:'放大',out:'缩小'}[action]||text);bar.append(button);}
     percent=element('span','image-preview-status','100%');bar.append(percent);
     download=element('a','','下载');bar.append(download);
+    channelSelect=element('select');channelSelect.setAttribute('aria-label','选择频道');channelSelect.hidden=true;bar.insertBefore(channelSelect,caption.nextSibling);
+    channelSelect.addEventListener('change',()=>{pages=groups[Number(channelSelect.value)].images;showPage(0);});
     const close=element('button','','关闭');close.type='button';close.dataset.action='close';bar.append(close);
     stage=element('div','image-preview-stage');picture=element('img');picture.alt='生成的长图';picture.draggable=false;message=element('div','image-preview-status-message');stage.append(picture,message);
     dialog.append(bar,stage,element('div','image-preview-hint','滚轮或双指缩放 · 放大后拖动 · 双击复位 · Esc 关闭'));
@@ -88,10 +91,21 @@
     dialog.addEventListener('close',()=>{if(dialog.open)return;pointers.clear();gesture=null;generation++;picture.removeAttribute('src');lastFocus?.focus();});
     new ResizeObserver(()=>{if(dialog.open)reset();}).observe(stage);
   }
-  function open(urls,title='长图') {
+  function safeUrls(urls) {
     const safe=(Array.isArray(urls)?urls:[urls]).filter(value=>{try{const url=new URL(value,location.href);return url.origin===location.origin&&/\.(png|jpe?g|webp)$/i.test(url.pathname)&&/^\/(output|drafts|media)\//.test(url.pathname);}catch{return false;}});
-    if(!safe.length)return;
-    if(!dialog)create();lastFocus=document.activeElement;pages=safe;dialog.dataset.title=title;if(!dialog.open)dialog.showModal();showPage(0);dialog.querySelector('[data-action=close]').focus();
+    return safe;
   }
-  window.ArchivePreview={open};
+  function open(urls,title='长图') {
+    const safe=safeUrls(urls);
+    if(!safe.length)return;
+    if(!dialog)create();channelSelect.hidden=true;groups=[];lastFocus=document.activeElement;pages=safe;dialog.dataset.title=title;if(!dialog.open)dialog.showModal();showPage(0);dialog.querySelector('[data-action=close]').focus();
+  }
+  function openGroups(columns,title='分栏图') {
+    const selected=columns.map(column=>({...column,images:safeUrls(column.images)})).filter(column=>column.images.length);
+    if(!selected.length)return;
+    open(selected[0].images,title);groups=selected;
+    channelSelect.replaceChildren(...groups.map((group,index)=>{const option=element('option','',group.title||`频道 ${index+1}`);option.value=String(index);return option;}));
+    channelSelect.hidden=false;
+  }
+  window.ArchivePreview={open,openGroups};
 })();

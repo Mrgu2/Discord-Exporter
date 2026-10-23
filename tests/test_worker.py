@@ -39,6 +39,33 @@ class WorkerRecoveryTests(unittest.TestCase):
     def new_worker(self):
         return Worker(self.store, self.root, FakeSettings(), NoCredentials(), None)
 
+    def test_render_deduplicates_queued_active_and_dequeued_transition(self):
+        first=self.worker.submit('render',{'draft_id':'fixture','target':'main'})
+        self.assertEqual(self.worker.submit('render',{'draft_id':'fixture','target':'main'})['id'],first['id'])
+        removed=self.worker.jobs.get_nowait()
+        # Covers the brief handoff between queue.get and active_job assignment.
+        self.assertTrue(self.worker.submit('render',{'draft_id':'fixture','target':'main'})['deduplicated'])
+        self.worker.state['active_job']={'id':removed['id'],'type':'render','draft_id':'fixture','target':'main'}
+        active=self.worker.submit('render',{'draft_id':'fixture','target':'main'})
+        self.assertEqual(active['status'],'running')
+        mobile=self.worker.submit('render',{'draft_id':'fixture','target':'mobile'})
+        self.assertNotEqual(mobile['id'],first['id'])
+        self.assertEqual(len(self.worker.status()[0]['render_jobs']),2)
+
+    def test_speech_failure_does_not_reclassify_durable_capture_as_offline(self):
+        config=FakeSettings().read();config['channels']=[{'id':'100'}]
+        self.worker.settings=Mock();self.worker.settings.read.return_value=config
+        self.worker.credentials=Mock();self.worker.credentials.get.return_value='synthetic'
+        with patch('discord_archive.worker.DiscordClient'),patch('discord_archive.worker.CaptureService') as capture, \
+                patch.object(self.worker.speech,'process_saved',side_effect=RuntimeError('synthetic ASR fault')):
+            capture.return_value.capture.return_value={'status':'success'}
+            result=self.worker.capture({'trigger':'manual'})
+        self.assertEqual(result['status'],'success')
+        self.assertTrue(result['audio']['failed'])
+        self.assertIsNotNone(self.worker.state['last_success_at'])
+        self.assertIsNone(self.worker.state['offline_since'])
+        self.assertIsNone(self.worker.state['retry_at'])
+
     def run_one_failure(self, error):
         self.worker.stop_event.clear()
         self.worker.submit("capture", {"trigger": "manual"})

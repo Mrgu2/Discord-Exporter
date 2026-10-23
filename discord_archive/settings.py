@@ -18,6 +18,7 @@ DEFAULT_CONFIG = {
         'window': {'enabled': True, 'start': '15:50', 'end': '16:10', 'every_minutes': 5, 'weekdays': [0, 1, 2, 3, 4]}},
     'model': {'enabled': False, 'base_url': '', 'model': ''},
     'download_media': True,
+    'speech': {'enabled': True, 'language': 'zh', 'model_path': '', 'python': ''},
 }
 
 

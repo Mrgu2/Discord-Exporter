@@ -244,8 +244,11 @@ def verify():
             downloaded_media,_ = request("/media/synthetic.png")
             require(downloaded_media == raw_png,"Local media download changed the saved original")
 
-            json_request("/api/render","POST",{"draft_id":draft["id"]},expected=202)
+            json_request("/api/render","POST",{"draft_id":draft["id"],"target":"all","render_scale":2},expected=202)
             rendered = wait_for_job(lambda result:bool(result.get("images")) and result.get("draft",{}).get("id") == draft["id"])
+            # Status polling carries a summary; full evidence is loaded only
+            # when needed for the export acceptance checks.
+            rendered['draft'],_ = json_request(f'/drafts/{draft["id"]}/metadata.json')
             require(rendered.get('layout_mode')=='stacked' and len(rendered['images'])==1,'The section strips were not combined into one image')
             require(rendered.get('render_scale')==2,'The workflow did not produce a 2x HiDPI export')
             bands=rendered['draft']['render_verification']['bands']

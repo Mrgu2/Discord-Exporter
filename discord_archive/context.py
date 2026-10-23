@@ -161,7 +161,12 @@ def build_context_for_seed(store: ArchiveStore, channel_id: str, message_id: str
         "reply_chain_order":"oldest_to_immediate_parent"}
 
 
-def _make_index(store, as_of_run_id=None, until=None):
+def build_context_index(store: ArchiveStore, *, as_of_run_id=None, until=None):
+    """Create one reusable context snapshot for a single manuscript generation.
+
+    Keep it local to that generation. The selected observation round and end
+    time are part of its scope; historical and current indexes cannot mix.
+    """
     all_messages = store.list_messages(as_of_run_id=as_of_run_id)
     ceiling = parse_time(until)
     children,by_channel,positions,by_thread = {},{},{},{}
@@ -185,12 +190,17 @@ def _make_index(store, as_of_run_id=None, until=None):
             children.setdefault(parent,[]).append(message)
     return {"all_messages":all_messages,"messages":{_key(message):message for message in all_messages},
         "children":children,"by_channel":by_channel,"by_thread":by_thread,"positions":positions,"thread_channels":thread_channels,
-        "channels":{item["channel_id"]:item for item in store.list_channels()}}
+        "channels":{item["channel_id"]:item for item in store.list_channels()},
+        "scope":(id(store),as_of_run_id,ceiling)}
+
+
+def _make_index(store, as_of_run_id=None, until=None):
+    return build_context_index(store,as_of_run_id=as_of_run_id,until=until)
 
 
 def build_context(store: ArchiveStore, target_author_id: str, channel_id: str | None = None,
                   run_id: int | None = None, since: Any = None, until: Any = None,
-                  **options) -> dict[str, Any]:
+                  *, _index=None, **options) -> dict[str, Any]:
     """Select target-author seeds, then recover their evidenced local context."""
     if not target_author_id:
         raise ValueError("请先指定要整理的发言人")
@@ -199,7 +209,11 @@ def build_context(store: ArchiveStore, target_author_id: str, channel_id: str | 
     else:
         seeds = store.list_messages(channel_id=channel_id,author_id=str(target_author_id),
             since=since,until=until,include_snapshots=False)
-    index = _make_index(store,as_of_run_id=run_id,until=until)
+    if _index is not None and _index.get("scope") != (id(store),run_id,parse_time(until)):
+        raise ValueError("共享上下文索引与当前归档、轮次或截止时间不一致")
+    # An empty channel needs no whole-archive index, especially for routine
+    # incremental rounds containing no new target-author messages.
+    index = _index if _index is not None else (_make_index(store,as_of_run_id=run_id,until=until) if seeds else None)
     items = [build_context_for_seed(store,message["channel_id"],message["message_id"],until=until,_index=index,**options)
         for message in seeds]
     missing_keys = {(item["channel_id"],item["message_id"]) for context in items for item in context["missing_context"]}

@@ -6,6 +6,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 from discord_archive.editorial import DraftService
+from discord_archive.context import build_context_index
 from discord_archive.store import ArchiveStore
 
 
@@ -82,6 +83,23 @@ class EditorialTests(unittest.TestCase):
         self.assertEqual(self.service.list_drafts()[0]["id"],draft["id"])
         evidence = json.loads((folder/"evidence.json").read_text())
         self.assertEqual(evidence["groups"][0]["answers"][0]["content"],"等待确认后再考虑。")
+
+    def test_generation_shares_current_index_but_keeps_historical_rounds_separate(self):
+        self.settings.value['channels']=[{'id':'100','label':'甲'},{'id':'200','label':'乙'}]
+        self.save([message(1,'SPY 等待确认后再考虑。')])
+        run=self.store.start_run('200')
+        self.store.ingest_messages('200',[message(2,'QQQ 还需要成交量确认。',channel_id='200')],run)
+        self.store.finish_run(run,True)
+        with patch('discord_archive.editorial.build_context_index',wraps=build_context_index) as index:
+            day=self.service.generate({'scope':'day','date':'2026-10-21'})
+            self.assertEqual(index.call_count,1)
+        self.assertEqual(day['message_count'],2)
+        # Each latest channel round is a different historical snapshot; don't
+        # retain five whole-archive indexes when there is nothing to share.
+        with patch('discord_archive.editorial.build_context_index',wraps=build_context_index) as index:
+            latest=self.service.generate({'scope':'latest'})
+            index.assert_not_called()
+        self.assertEqual(latest['message_count'],2)
 
     def test_render_saves_actual_resolution_for_main_and_mobile_images(self):
         self.save([message(1,'等待市场确认之后再考虑。')])

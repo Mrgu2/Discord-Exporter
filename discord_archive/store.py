@@ -137,6 +137,12 @@ class ArchiveStore:
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA busy_timeout=5000")
         self._create_schema()
+        self._summary_cache = None
+
+    def change_token(self) -> tuple[int, int]:
+        """Cheap invalidation for local writes and commits by other connections."""
+        with self._lock:
+            return self.conn.total_changes, self.conn.execute("PRAGMA data_version").fetchone()[0]
 
     def close(self) -> None:
         with self._lock:
@@ -383,8 +389,9 @@ class ArchiveStore:
             result[key] = normalized[key]
         result["id"] = result["message_id"]
         result["is_reference_snapshot"] = bool(result["is_reference_snapshot"])
-        result["version_count"] = self.conn.execute("SELECT COUNT(*) FROM message_versions WHERE channel_id=? AND message_id=?",
-            (result["channel_id"],result["message_id"])).fetchone()[0]
+        if "version_count" not in result:
+            result["version_count"] = self.conn.execute("SELECT COUNT(*) FROM message_versions WHERE channel_id=? AND message_id=?",
+                (result["channel_id"],result["message_id"])).fetchone()[0]
         return result
 
     def get_message(self, channel_id: str, message_id: str) -> dict[str, Any] | None:
@@ -428,7 +435,9 @@ class ArchiveStore:
             args.append(iso_time(until))
         if not include_snapshots:
             clauses.append("m.is_reference_snapshot=0")
-        query = "SELECT m.* FROM messages m" + (" WHERE " + " AND ".join(clauses) if clauses else "") + " ORDER BY m.created_at,LENGTH(m.message_id),m.message_id"
+        query = """SELECT m.*,(SELECT COUNT(*) FROM message_versions vc
+            WHERE vc.channel_id=m.channel_id AND vc.message_id=m.message_id) AS version_count
+            FROM messages m""" + (" WHERE " + " AND ".join(clauses) if clauses else "") + " ORDER BY m.created_at,LENGTH(m.message_id),m.message_id"
         if limit is not None:
             query += " LIMIT ?"
             args.append(int(limit))
@@ -545,14 +554,25 @@ class ArchiveStore:
 
     def summary(self) -> dict[str, Any]:
         with self._lock:
+            token = self.change_token()
+            if not self.conn.in_transaction and self._summary_cache is not None and self._summary_cache[0] == token:
+                cached = self._summary_cache[1]
+                return {**cached,"runs_by_status":dict(cached["runs_by_status"])}
             message_count = self.conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
             version_count = self.conn.execute("SELECT COUNT(*) FROM message_versions").fetchone()[0]
             snapshot_count = self.conn.execute("SELECT COUNT(*) FROM messages WHERE is_reference_snapshot=1").fetchone()[0]
             run_counts = {row["status"]:row["count"] for row in self.conn.execute("SELECT status,COUNT(*) AS count FROM runs GROUP BY status")}
             gap_count = self.conn.execute("SELECT COUNT(*) FROM coverage_gaps").fetchone()[0]
-        return {"message_count":message_count,"version_count":version_count,"reference_snapshot_count":snapshot_count,
-            "channel_count":len(self.list_channels()),"run_count":sum(run_counts.values()),"runs_by_status":run_counts,
-            "coverage_gap_count":gap_count}
+            channel_count = self.conn.execute("SELECT COUNT(*) FROM channels").fetchone()[0]
+            result = {"message_count":message_count,"version_count":version_count,"reference_snapshot_count":snapshot_count,
+                "channel_count":channel_count,"run_count":sum(run_counts.values()),"runs_by_status":run_counts,
+                "coverage_gap_count":gap_count}
+            # The token is captured before reading: a concurrent external commit
+            # invalidates this entry on the next call rather than being missed.
+            # Never retain an uncommitted view: total_changes does not rewind
+            # when SQLite rolls a transaction back.
+            self._summary_cache = None if self.conn.in_transaction else (token,result)
+            return {**result,"runs_by_status":dict(run_counts)}
 
     stats = summary
 

@@ -15,6 +15,13 @@
   let lastDraftSignature = '';
   let currentView = 'workspace';
   let draftSearch = '';
+  const draftPageSize = 20;
+  let draftLibrary = { items: [], total: 0, offset: 0, has_more: false, revision: null };
+  let draftListLoading = false;
+  let draftListError = '';
+  let draftListSequence = 0;
+  let draftListRequest = '';
+  let draftSearchTimer;
   let renderPending = new Set();
   const renderScales = new Map();
   let remoteRenderJobs = [];
@@ -99,7 +106,7 @@
     text('page-title', { workspace: '工作台', library: '我的稿件' }[view]);
     text('page-eyebrow', { workspace: '工作台', library: '本地资料', settings: '本机配置' }[view]);
     if (changeHash && location.hash !== `#${view}`) history.replaceState(null, '', `#${view}`);
-    if (view === 'library' && snapshot) renderDrafts(true);
+    if (view === 'library' && snapshot) { renderDrafts(true); syncDraftLibrary(); }
   }
   function hydrateConfig(config) {
     publicConfig = config || {};
@@ -207,8 +214,8 @@
     text('archive-messages', number(first(archive.message_count, archive.messages, archive.total_messages, state.message_count)));
     text('archive-channels', number(first(archive.channel_count, archive.channels_count, Array.isArray(archive.channels) ? archive.channels.length : undefined, channels.length)));
     text('archive-attachments', number(first(archive.attachment_count, archive.attachments, archive.total_attachments, archive.media?.saved)));
-    text('archive-drafts', number(drafts.length));
-    text('draft-count', String(drafts.length));
+    text('archive-drafts', number(first(data.draft_count, drafts.length)));
+    text('draft-count', String(first(data.draft_count, drafts.length)));
     text('day-boundary-help', '按美股交易日期归档，跨午夜的答疑也能放在同一交易日。');
     updateMode();
     const storageName = {keychain:'钥匙串',private_file:'本机受限文件'}[state.browser_account?.credential_backend];
@@ -218,6 +225,7 @@
     renderRemote(data.remote || {});
     text('last-updated', `状态更新于 ${dateTime(new Date(), true)}`);
     renderDrafts();
+    if (currentView === 'library') syncDraftLibrary();
     renderRuns(runs);
     updateDraftOptionsLabel();
     const observedJob = currentJob?.id;
@@ -375,7 +383,8 @@
     if (draft.mode === 'model') meta.append(node('span', '', '模型整理'));
     if (draft.layout) meta.append(node('span', '', { stacked: '上下分区拼图', horizontal: '左右分区高清图', collage: '自动拼版', board: '四栏拼版', qa: '问答页' }[draft.layout] || draft.layout));
     if (draft.audio?.complete) meta.append(node('span', '', `${draft.audio.complete} 条语音转写`));
-    if (Array.isArray(draft.warnings) && draft.warnings.length) meta.append(node('span', 'draft-state', `${draft.warnings.length} 项待核对`));
+    const warningCount = first(draft.warning_count, Array.isArray(draft.warnings) ? draft.warnings.length : 0);
+    if (warningCount) meta.append(node('span', 'draft-state', `${warningCount} 项待核对`));
     if (draft.error) meta.append(node('span', 'draft-state failed', typeof draft.error === 'string' ? draft.error : draft.error.message || '生成失败'));
     info.append(title, meta); row.append(info);
     const actions = node('div', 'draft-actions');
@@ -423,15 +432,55 @@
     if (window.ArchivePreview?.open) window.ArchivePreview.open(images, title);
     else showToast('图片预览暂未载入，请刷新页面后重试。', true);
   }
+  function draftPage() {
+    if (snapshot?.draft_revision !== undefined) return draftLibrary;
+    // Older servers and offline fixtures still return their complete list.
+    const rows = (Array.isArray(snapshot?.drafts) ? snapshot.drafts : []).filter(draft =>
+      String(first(draft.title, draft.name, '')).toLocaleLowerCase().includes(draftSearch.toLocaleLowerCase()));
+    const offset = Math.min(draftLibrary.offset, Math.max(0, Math.floor((rows.length - 1) / draftPageSize) * draftPageSize));
+    return { items: rows.slice(offset, offset + draftPageSize), total: rows.length, offset, has_more: offset + draftPageSize < rows.length };
+  }
+  function syncDraftLibrary() {
+    if (snapshot?.draft_revision !== undefined && draftLibrary.revision !== snapshot.draft_revision)
+      loadDraftPage(draftLibrary.offset);
+  }
+  async function loadDraftPage(offset = 0) {
+    if (snapshot?.draft_revision === undefined) {
+      draftLibrary.offset = offset; renderDrafts(true); return;
+    }
+    const revision = snapshot.draft_revision;
+    const request = JSON.stringify([offset, draftSearch, revision]);
+    if (draftListLoading && request === draftListRequest) return;
+    const sequence = ++draftListSequence;
+    draftListRequest = request; draftListLoading = true; draftListError = ''; renderDrafts(true);
+    try {
+      const query = new URLSearchParams({ limit: String(draftPageSize), offset: String(offset), search: draftSearch });
+      const result = await api(`/api/drafts?${query}`);
+      if (sequence !== draftListSequence) return;
+      if (!Array.isArray(result.items)) throw new Error('稿件列表暂时无法读取，请重试。');
+      if (offset && offset >= result.total) { draftListLoading = false; return loadDraftPage(Math.max(0, Math.floor((result.total - 1) / draftPageSize) * draftPageSize)); }
+      draftLibrary = { ...result, revision: result.revision ?? revision };
+    } catch (error) {
+      if (sequence === draftListSequence) draftListError = error.message;
+    } finally {
+      if (sequence === draftListSequence) { draftListLoading = false; renderDrafts(true); }
+    }
+  }
   function renderDrafts(force = false) {
-    const drafts = Array.isArray(snapshot?.drafts) ? snapshot.drafts : [];
-    const signature = JSON.stringify(drafts) + draftSearch + [...renderPending].join(',') + JSON.stringify(remoteRenderJobs) + JSON.stringify([...renderScales]);
+    const recent = (Array.isArray(snapshot?.drafts) ? snapshot.drafts : []).slice(0, 3);
+    const page = draftPage();
+    const signature = JSON.stringify([recent, page, draftSearch, draftListLoading, draftListError, [...renderPending], remoteRenderJobs, [...renderScales]]);
     if (!force && signature === lastDraftSignature) return;
     lastDraftSignature = signature;
-    const recent = drafts.slice(0, 3);
     $('recent-drafts').replaceChildren(...(recent.length ? recent.map(draftRow) : [emptyState('还没有稿件', '先保存一轮对话，再选择范围生成。')]));
-    const matches = drafts.filter((draft) => String(first(draft.title, draft.name, '')).toLocaleLowerCase().includes(draftSearch.toLocaleLowerCase()));
-    $('all-drafts').replaceChildren(...(matches.length ? matches.map(draftRow) : [emptyState(draftSearch ? '没有找到匹配的稿件' : '还没有稿件', draftSearch ? '试试其他关键词。' : '在“工作台”保存对话，再生成第一份稿件。')]));
+    $('all-drafts').replaceChildren(...(page.items.length ? page.items.map(draftRow) : [emptyState(draftListLoading ? '正在读取…' : draftSearch ? '没有找到匹配的稿件' : '还没有稿件', draftListLoading ? '' : draftSearch ? '试试其他关键词。' : '在“工作台”保存对话，再生成第一份稿件。')]));
+    $('draft-pagination').hidden = !page.total && !draftListError;
+    text('draft-page-count', page.total ? `${page.offset + 1}–${page.offset + page.items.length} / ${number(page.total)}` : '');
+    $('draft-page-previous').disabled = draftListLoading || page.offset === 0;
+    $('draft-page-next').disabled = draftListLoading || !page.has_more;
+    $('draft-list-error').hidden = !draftListError;
+    text('draft-list-error-text', draftListError);
+    $('all-drafts').setAttribute('aria-busy', String(draftListLoading));
   }
   function emptyState(title, detail) { const wrapper = node('div', 'empty-state'); wrapper.append(node('span', '', title), node('small', '', detail)); return wrapper; }
   function renderRuns(runs) {
@@ -629,7 +678,15 @@
   $('config-form').addEventListener('submit', saveConfig);
   $('config-form').addEventListener('input', () => { settingsDirty = true; text('config-save-status', '有未保存的设置。'); });
   document.querySelectorAll('.credential-form').forEach((form) => form.addEventListener('submit', saveCredential));
-  $('draft-search').addEventListener('input', (event) => { draftSearch = event.target.value.trim(); renderDrafts(true); });
+  $('draft-search').addEventListener('input', (event) => {
+    draftSearch = event.target.value.trim(); clearTimeout(draftSearchTimer);
+    // Invalidate an older search immediately, even during the debounce window.
+    draftListSequence += 1; draftListLoading = false; draftLibrary = { items: [], total: 0, offset: 0, has_more: false, revision: null };
+    renderDrafts(true); draftSearchTimer = setTimeout(() => loadDraftPage(0), 250);
+  });
+  $('draft-page-previous').addEventListener('click', () => loadDraftPage(Math.max(0, draftPage().offset - draftPageSize)));
+  $('draft-page-next').addEventListener('click', () => loadDraftPage(draftPage().offset + draftPageSize));
+  $('draft-list-retry').addEventListener('click', () => loadDraftPage(draftPage().offset));
   $('login-form').addEventListener('submit', async (event) => {
     event.preventDefault(); const button = $('login-button'); button.disabled = true; $('login-error').hidden = true;
     try {

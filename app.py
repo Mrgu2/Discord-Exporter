@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import fcntl
 import hashlib
 import hmac
@@ -47,6 +48,7 @@ class Application:
         self.worker = Worker(self.store, self.root, self.settings, self.credentials, self.drafts)
         self.code, self.csrf = access_code(self.root), secrets.token_urlsafe(24)
         self.sessions, self.login_attempts = {}, {}
+        self._status_cache, self._status_cache_lock = {}, threading.RLock()
         self.local_hostname = socket.gethostname().split('.')[0]
         try:
             result = subprocess.run(['/usr/sbin/scutil', '--get', 'LocalHostName'], capture_output=True, text=True, timeout=3)
@@ -56,6 +58,23 @@ class Application:
             pass
 
     def remote_addresses(self):
+        return self._cached_status_value('addresses', 30, self._discover_addresses)
+
+    def _cached_status_value(self, key, lifetime, compute):
+        # Cache only discovery/boolean flags, never an account credential.
+        with self._status_cache_lock:
+            now = time.monotonic()
+            cached = self._status_cache.get(key)
+            if cached is None or now - cached[0] >= lifetime:
+                cached = (now, compute())
+                self._status_cache[key] = cached
+            return copy.deepcopy(cached[1])
+
+    def invalidate_status_cache(self):
+        with self._status_cache_lock:
+            self._status_cache.clear()
+
+    def _discover_addresses(self):
         addresses = [f'http://{self.local_hostname}.local:{self.port}']
         for interface in ('en0', 'en1'):
             try:
@@ -68,16 +87,35 @@ class Application:
 
     def status(self, local=False):
         state, connectivity = self.worker.status()
+        # Full job evidence stays on disk; polling needs only the result links.
+        result = state.get('last_result')
+        if isinstance(result, dict):
+            state['last_result'] = {key: value for key, value in result.items()
+                if key in {'id', 'title', 'status', 'scope', 'evidence_url', 'manuscript_url',
+                           'images', 'channels', 'message_count', 'error', 'path', 'url',
+                           'layout_mode', 'render_scale', 'single_columns'}}
+            if isinstance(result.get('draft'), dict):
+                state['last_result']['draft'] = {key: result['draft'][key]
+                    for key in ('id', 'title', 'status') if key in result['draft']}
+            if isinstance(result.get('single_columns'), list):
+                state['last_result']['single_columns'] = [{key: column[key] for key in
+                    ('title', 'channel_id', 'file', 'url', 'images', 'render_scale') if key in column}
+                    for column in result['single_columns'] if isinstance(column, dict)]
         runs = self.store.list_runs(limit=40)
         for row in runs:
             row['id'], row['created_at'], row['finished_at'] = row['run_id'], row['started_at'], row['completed_at']
         archive = self.store.summary()
         archive['media'] = self.worker.media.stats()
         archive['attachment_failures'] = archive['media'].get('failed', 0)
+        page = self.drafts.list_draft_page(limit=3)
+        credential_revision = (state.get('browser_connected'), (state.get('browser_account') or {}).get('id'))
+        credential_flags = self._cached_status_value(('credentials', credential_revision), 30,
+            lambda: {kind: bool(self.credentials.get(kind)) for kind in ('discord', 'model')})
         return {
             'config': self.settings.read(), 'state': state, 'connectivity': connectivity,
-            'runs': runs, 'drafts': self.drafts.list_drafts(), 'archive': archive,
-            'credentials': {kind: bool(self.credentials.get(kind)) for kind in ('discord', 'model')},
+            'runs': runs, 'drafts': page['items'], 'draft_count': page['total'],
+            'draft_revision': page['revision'], 'archive': archive,
+            'credentials': credential_flags,
             'remote': {'urls': self.remote_addresses(), **({'access_code': self.code} if local else {})},
         }
 
@@ -119,12 +157,10 @@ def make_handler(application):
             except Exception:
                 return False
 
-        def send(self, status, content, mime='application/json; charset=utf-8', extra=None):
-            if not isinstance(content, bytes):
-                content = json.dumps(content, ensure_ascii=False).encode() if mime.startswith('application/json') else content.encode()
+        def response_headers(self, status, length, mime, extra=None):
             self.send_response(status)
             self.send_header('Content-Type', mime)
-            self.send_header('Content-Length', str(len(content)))
+            self.send_header('Content-Length', str(length))
             self.send_header('Cache-Control', 'no-store')
             self.send_header('X-Content-Type-Options', 'nosniff')
             self.send_header('X-Frame-Options', 'DENY')
@@ -132,6 +168,11 @@ def make_handler(application):
             for key, value in (extra or {}).items():
                 self.send_header(key, value)
             self.end_headers()
+
+        def send(self, status, content, mime='application/json; charset=utf-8', extra=None):
+            if not isinstance(content, bytes):
+                content = json.dumps(content, ensure_ascii=False).encode() if mime.startswith('application/json') else content.encode()
+            self.response_headers(status, len(content), mime, extra)
             self.wfile.write(content)
 
         def body(self):
@@ -146,11 +187,28 @@ def make_handler(application):
             if not target.is_relative_to(base):
                 return self.send(403, {'error': '无效路径'})
             if target.is_dir():
-                target = target / 'index.html'
+                target = (target / 'index.html').resolve()
+                if not target.is_relative_to(base):
+                    return self.send(403, {'error': '无效路径'})
             if not target.is_file():
                 return self.send(404, {'error': '文件不存在'})
             mime = mimetypes.guess_type(target.name)[0] or 'application/octet-stream'
-            return self.send(200, target.read_bytes(), mime)
+            try:
+                source = target.open('rb')
+            except FileNotFoundError:
+                return self.send(404, {'error': '文件不存在'})
+            with source:
+                remaining = os.fstat(source.fileno()).st_size
+                try:
+                    self.response_headers(200, remaining, mime)
+                    while remaining:
+                        chunk = source.read(min(256 * 1024, remaining))
+                        if not chunk:
+                            break
+                        self.wfile.write(chunk)
+                        remaining -= len(chunk)
+                except (BrokenPipeError, ConnectionResetError):
+                    return  # A cancelled phone download must not trigger another response.
 
         def do_GET(self):
             if not self.valid_host():
@@ -168,6 +226,17 @@ def make_handler(application):
             try:
                 if url.path == '/api/status':
                     return self.send(200, app.status(local=self.local()))
+                if url.path == '/api/drafts':
+                    query = parse_qs(url.query)
+                    try:
+                        limit = int(query.get('limit', ['20'])[0])
+                        offset = int(query.get('offset', ['0'])[0])
+                        if not 1 <= limit <= 100 or offset < 0:
+                            raise ValueError()
+                    except ValueError:
+                        return self.send(400, {'error': '分页参数无效'})
+                    return self.send(200, app.drafts.list_draft_page(
+                        limit=limit, offset=offset, search=query.get('search', [''])[0]))
                 if url.path == '/api/config':
                     return self.send(200, app.settings.read())
                 if url.path == '/api/source':
@@ -217,6 +286,7 @@ def make_handler(application):
                     if not self.local():
                         return self.send(403, {'error': '账号凭证请仅在 Mac 本机配置'})
                     backend = app.credentials.set(data['kind'], data['value'])
+                    app.invalidate_status_cache()
                     if data['kind'] == 'discord':
                         with app.worker.lock:
                             app.worker.state.update(browser_connected=False, browser_account=None)

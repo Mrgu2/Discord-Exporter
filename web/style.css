@@ -154,6 +154,9 @@ details summary::-webkit-details-marker { display: none; }
 .draft-state { font-size: 12px; color: var(--muted); }
 .draft-state.failed { color: var(--danger); }
 .library-header { display: flex; justify-content: flex-start; margin: 0 0 16px; }
+.draft-pagination { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px 0; font-size: 13px; }
+.draft-pagination > div { display: flex; gap: 24px; }
+.draft-pagination button:disabled { opacity: .4; cursor: default; }
 .search-field { position: relative; display: flex; align-items: center; width: 340px; max-width: 100%; }
 .search-field svg { width: 17px; height: 17px; position: absolute; left: 13px; color: var(--muted); }
 .search-field input { border: 1px solid #d7dfec; padding: 11px 12px 11px 40px; border-radius: var(--radius-control); font-size: 14px; background: var(--surface); color: var(--ink); width: 100%; min-height: 44px; }

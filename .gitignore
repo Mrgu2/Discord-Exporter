@@ -9,3 +9,4 @@ config.local.json
 *.log
 node_modules/
 artifacts/
+dist/

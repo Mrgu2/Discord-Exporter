@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
+import copy
+import hashlib
 import html
 import json
 import re
 import shutil
 import subprocess
+import threading
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from .context import build_context
+from .context import build_context, build_context_index
 from .assets import forwarded_texts, iter_message_assets
 from .media import MediaArchive
 from .readability import choose_reading_groups, clean_reading_text
@@ -56,6 +59,8 @@ class DraftService:
         self.store,self.root,self.settings,self.credentials = store,Path(root),settings,credentials
         self.output = self.root/"output"
         self.output.mkdir(parents=True,exist_ok=True)
+        self._draft_listing_cache = {}
+        self._draft_listing_lock = threading.RLock()
 
     def _selection(self, request, config):
         scope = request.get("scope","latest")
@@ -128,8 +133,19 @@ class DraftService:
             raise ValueError("请先保存一轮以识别群主，或在设置中填写群主用户 ID")
         selection = self._selection(request,config)
         channel_rows = {str(row["id"] if isinstance(row,dict) else row):row if isinstance(row,dict) else {} for row in config.get("channels",[])}
-        bundles = [build_context(self.store,author,channel_id=channel,run_id=selection["run_ids"].get(channel,selection["run_id"]),
-            since=selection["since"],until=selection["until"]) for channel in selection["channels"]]
+        indexes, bundles = {}, []
+        scopes = [(selection['run_ids'].get(channel,selection['run_id']),selection['until'])
+            for channel in selection['channels']]
+        for channel in selection["channels"]:
+            run_id = selection["run_ids"].get(channel,selection["run_id"])
+            # A generation may share a current snapshot across channels. Each
+            # historical round retains its own exact observation snapshot.
+            key = (run_id, selection["until"])
+            if scopes.count(key) > 1 and key not in indexes:
+                indexes[key] = build_context_index(self.store,as_of_run_id=run_id,until=selection["until"])
+            bundles.append(build_context(self.store,author,channel_id=channel,run_id=run_id,
+                since=selection["since"],until=selection["until"],_index=indexes.get(key)))
+        indexes.clear()
         items = [item for bundle in bundles for item in bundle["items"]]
         if not items:
             if selection["scope"] == "latest":
@@ -448,6 +464,70 @@ class DraftService:
             except (OSError,ValueError):
                 continue
         return sorted(result,key=lambda draft:draft.get("created_at",""),reverse=True)
+
+    @staticmethod
+    def _draft_list_item(metadata):
+        # Polling and the library need links and counts, never the full render
+        # verification or evidence copied into metadata.json.
+        fields = ('id','title','name','status','created_at','generated_at','timestamp',
+            'scope','date','message_count','source_count','messages_count','mode',
+            'layout','manuscript_url','render_scale')
+        item = {key:metadata[key] for key in fields if key in metadata}
+        item['warning_count'] = len(metadata.get('warnings') or [])
+        if metadata.get('error'):
+            item['error'] = metadata['error']
+        if isinstance(metadata.get('audio'),dict):
+            item['audio'] = {'complete':metadata['audio'].get('complete',0)}
+        def variant(source):
+            result = {'images':list(source.get('images') or [])}
+            if 'render_scale' in source:
+                result['render_scale'] = source['render_scale']
+            result['single_columns'] = [{key:column[key] for key in
+                ('title','channel_id','file','render_scale','images') if key in column}
+                for column in source.get('single_columns') or [] if isinstance(column,dict)]
+            return result
+        item.update(variant(metadata))
+        if isinstance(metadata.get('image_variants'),dict):
+            item['image_variants'] = {str(scale):variant(value) for scale,value in
+                metadata['image_variants'].items() if isinstance(value,dict)}
+        return item
+
+    def list_draft_page(self, limit=20, offset=0, search=''):
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise ValueError('每页稿件数须在 1 到 100 之间')
+        if type(offset) is not int or offset < 0:
+            raise ValueError('稿件起点须为非负整数')
+        if not isinstance(search,str):
+            raise ValueError('搜索关键词须为文字')
+        query = search.strip().casefold()
+        with self._draft_listing_lock:
+            present, rows, fingerprint = set(), [], hashlib.sha256()
+            for path in sorted(self.output.glob('*/metadata.json')):
+                present.add(path)
+                try:
+                    stat = path.stat()
+                    stamp = (stat.st_mtime_ns,stat.st_ctime_ns,stat.st_size,stat.st_ino)
+                    fingerprint.update(f'{path.parent.name}:{stamp}\n'.encode())
+                    cached = self._draft_listing_cache.get(path)
+                    if cached is None or cached[0] != stamp:
+                        metadata = json.loads(path.read_text(encoding='utf-8'))
+                        if not isinstance(metadata,dict):
+                            raise ValueError('稿件元数据须为对象')
+                        cached = (stamp,self._draft_list_item(metadata))
+                        self._draft_listing_cache[path] = cached
+                    rows.append(cached[1])
+                except (OSError,ValueError,TypeError):
+                    # A failed read may be a transient external write. Retry on
+                    # the next request instead of retaining an old success.
+                    self._draft_listing_cache.pop(path,None)
+            for path in self._draft_listing_cache.keys()-present:
+                del self._draft_listing_cache[path]
+            rows.sort(key=lambda item:(str(item.get('created_at') or ''),str(item.get('id',''))),reverse=True)
+            if query:
+                rows = [item for item in rows if query in str(item.get('title') or item.get('name') or '').casefold()]
+            return {'items':copy.deepcopy(rows[offset:offset+limit]),'total':len(rows),
+                'offset':offset,'limit':limit,'has_more':offset+limit<len(rows),
+                'revision':fingerprint.hexdigest()}
 
     def render(self, draft_id, target='all', force=False, render_scale=1):
         if type(render_scale) is not int or render_scale not in (1,2):

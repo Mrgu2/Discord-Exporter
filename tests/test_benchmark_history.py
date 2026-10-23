@@ -43,7 +43,9 @@ class HistoryBenchmarkTests(unittest.TestCase):
             if name == "batch_join_candidate":
                 self.assertEqual(row["sql_statements"], 1)
             else:
-                self.assertEqual(row["sql_statements"], 1 + 2 * row["result_count"])
+                # Version counts now stay inside the outer SELECT; only the
+                # exact observation overlay remains one lookup per result.
+                self.assertEqual(row["sql_statements"], 1 + row["result_count"])
                 observation = " ".join(row["plans"]["observation"])
                 self.assertEqual("idx_run_messages_message_run" in observation, indexed)
         self.assertGreater(variants[("current_n_plus_one", False)]["vm_steps"],

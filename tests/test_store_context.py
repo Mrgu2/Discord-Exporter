@@ -2,9 +2,10 @@ import hashlib
 import json
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
-from discord_archive.context import build_context, build_context_for_seed
+from discord_archive.context import build_context, build_context_for_seed, build_context_index
 from discord_archive.store import ArchiveStore, normalize_message
 
 
@@ -36,6 +37,76 @@ class StoreContextTests(unittest.TestCase):
         self.assertEqual(self.store.get_cursor("100"),"2")
         self.assertEqual(len(self.store.list_messages(run_id=first)),2)
         self.assertEqual(len(self.store.list_messages(run_id=second)),1)
+
+    def test_summary_cache_invalidates_local_external_writes_and_is_detached(self):
+        first = self.store.summary()
+        first["runs_by_status"]["invented"] = 99
+        first["media"] = {"invented":True}
+        self.assertNotIn("media",self.store.summary())
+        self.assertNotIn("invented",self.store.summary()["runs_by_status"])
+        self.save([msg(1)])
+        self.assertEqual(self.store.summary()["message_count"],1)
+        queries = []
+        self.store.conn.set_trace_callback(queries.append)
+        try:
+            self.assertEqual(self.store.summary()["message_count"],1)
+        finally:
+            self.store.conn.set_trace_callback(None)
+        self.assertFalse(any("COUNT(" in sql.upper() for sql in queries))
+        with ArchiveStore(Path(self.directory.name)/"archive.sqlite3") as writer:
+            run = writer.start_run("100")
+            writer.ingest_messages("100",[msg(2)],run)
+            writer.finish_run(run,True)
+        self.assertEqual(self.store.summary()["message_count"],2)
+        self.assertEqual(self.store.summary()["runs_by_status"],{"success":2})
+
+    def test_summary_never_caches_a_view_that_can_be_rolled_back(self):
+        self.store.summary()
+        with self.assertRaises(RuntimeError):
+            with self.store._transaction() as db:
+                self.store._ensure_channel(db,"uncommitted",now="2026-10-21T00:00:00Z")
+                self.assertEqual(self.store.summary()["channel_count"],1)
+                raise RuntimeError("synthetic rollback")
+        self.assertEqual(self.store.summary()["channel_count"],0)
+
+    def test_current_message_list_counts_versions_in_one_select(self):
+        self.save([msg(1,"before"),msg(2)])
+        self.save([msg(1,"after",edited_timestamp="2026-10-21T15:00:00Z")])
+        queries = []
+        self.store.conn.set_trace_callback(queries.append)
+        try:
+            result = self.store.list_messages()
+        finally:
+            self.store.conn.set_trace_callback(None)
+        self.assertEqual([item["version_count"] for item in result],[2,1])
+        self.assertEqual(len([sql for sql in queries if sql.lstrip().startswith("SELECT")]),1)
+
+    def test_shared_context_index_preserves_cross_channel_ancestors_and_scope(self):
+        earlier = self.save([msg(1,"question",author="member")])
+        run = self.store.start_run("200")
+        self.store.ingest_messages("200",[{**msg(2,"answer"),"channel_id":"200",
+            "message_reference":{"message_id":"1","channel_id":"100"}}],run)
+        self.store.finish_run(run,True)
+        until = "2026-10-21T23:59:59Z"
+        index = build_context_index(self.store,until=until)
+        with patch.object(self.store,"list_messages",wraps=self.store.list_messages) as reader:
+            shared = build_context(self.store,"owner",channel_id="200",until=until,_index=index)
+            self.assertEqual(reader.call_count,1)  # seed query only
+        regular = build_context(self.store,"owner",channel_id="200",until=until)
+        self.assertEqual(shared,regular)
+        self.assertEqual(shared["items"][0]["reply_chain"][0]["channel_id"],"100")
+        for mismatch in ({"run_id":earlier,"until":until},{"until":"2026-10-22T00:00:00Z"}):
+            with self.subTest(**mismatch), self.assertRaises(ValueError):
+                build_context(self.store,"owner",channel_id="200",_index=index,**mismatch)
+        with ArchiveStore(":memory:") as other, self.assertRaises(ValueError):
+            build_context(other,"owner",until=until,_index=index)
+
+    def test_empty_seed_selection_does_not_load_whole_archive(self):
+        self.save([msg(1,author="member")])
+        with patch.object(self.store,"list_messages",wraps=self.store.list_messages) as reader:
+            result = build_context(self.store,"owner",channel_id="100")
+        self.assertEqual(result["items"],[])
+        self.assertEqual(reader.call_count,1)
 
     def test_edit_versions_preserve_original_raw(self):
         original = msg(1,"first")

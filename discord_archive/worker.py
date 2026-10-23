@@ -64,11 +64,14 @@ class Worker:
             if kind == 'render':
                 payload = {**(payload or {})}
                 payload.setdefault('target','main')
+                payload.setdefault('render_scale',1)
+                if type(payload['render_scale']) is not int or payload['render_scale'] not in (1,2):
+                    raise ValueError('导出清晰度须为标准 1× 或 HiDPI 2×')
                 if payload['target'] not in {'main','mobile','all'}:
                     raise ValueError('图片类型须为 main、mobile 或 all')
                 active = self.state.get('active_job') or {}
-                for (draft,target),identifier in self._render_jobs.items():
-                    if draft == payload.get('draft_id') and target in {payload['target'],'all'}:
+                for (draft,target,scale),identifier in self._render_jobs.items():
+                    if draft == payload.get('draft_id') and target in {payload['target'],'all'} and scale == payload['render_scale']:
                         return {'id':identifier,'status':'running' if active.get('id') == identifier else 'queued','type':'render','deduplicated':True}
             if self.jobs.qsize() >= 20:
                 raise ValueError('等待任务过多，请稍后重试')
@@ -83,7 +86,7 @@ class Worker:
                 self._queued_capture = True
             identifier = uuid.uuid4().hex
             if kind == 'render':
-                self._render_jobs[(payload.get('draft_id'),payload['target'])] = identifier
+                self._render_jobs[(payload.get('draft_id'),payload['target'],payload['render_scale'])] = identifier
             self.jobs.put({'id': identifier, 'type': kind, 'payload': payload or {}})
             return {'id': identifier, 'status': 'queued', 'type': kind}
 
@@ -187,7 +190,7 @@ class Worker:
                 continue
             with self.lock:
                 self.state.update(status='running', active_job={'type': job['type'], 'id': job['id'],
-                    **({key:job['payload'].get(key) for key in ('draft_id','target')} if job['type'] == 'render' else {}),
+                    **({key:job['payload'].get(key) for key in ('draft_id','target','render_scale')} if job['type'] == 'render' else {}),
                     'message': {'capture': '正在保存频道与回复上下文', 'draft': '正在生成稿件', 'render': '正在生成分栏图' if job['payload'].get('target') == 'mobile' else '正在生成高清主图', 'import': '正在导入存档', 'connect_browser': '请在新打开的 Discord 窗口中登录'}.get(job['type'], '处理中')})
                 self.persist()
             try:
@@ -197,7 +200,7 @@ class Worker:
                 elif job['type'] == 'draft':
                     result = self.drafts.generate(job['payload'])
                 elif job['type'] == 'render':
-                    result = self.drafts.render(job['payload']['draft_id'],target=job['payload'].get('target','main'),force=job['payload'].get('force',False))
+                    result = self.drafts.render(job['payload']['draft_id'],target=job['payload'].get('target','main'),force=job['payload'].get('force',False),render_scale=job['payload'].get('render_scale',1))
                 elif job['type'] == 'import':
                     result = self.store.import_dce(job['payload']['path'])
                 elif job['type'] == 'connect_browser':
@@ -234,7 +237,7 @@ class Worker:
                     if job['type'] == 'capture':
                         self._queued_capture = False
                     if job['type'] == 'render':
-                        self._render_jobs.pop((job['payload'].get('draft_id'),job['payload'].get('target','main')),None)
+                        self._render_jobs.pop((job['payload'].get('draft_id'),job['payload'].get('target','main'),job['payload'].get('render_scale',1)),None)
                     self.persist()
                 self.jobs.task_done()
 
@@ -246,7 +249,7 @@ class Worker:
         state['queue_length'] = self.jobs.qsize()
         with self.jobs.mutex:
             queued = list(self.jobs.queue)
-        state['render_jobs'] = [{key:job.get(key) for key in ('id','type','draft_id','target')}
+        state['render_jobs'] = [{key:job.get(key) for key in ('id','type','draft_id','target','render_scale')}
             for job in [state.get('active_job') or {}, *[{**job,**job['payload']} for job in queued]] if job.get('type') == 'render']
         config = self.settings.read()
         state['market_day'] = market_day(now, config['market_timezone'], config.get('day_boundary_hour', 4))

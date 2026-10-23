@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Render semantic manuscript layouts directly at 2x device-pixel density.
+// Render semantic manuscripts at the selected native device-pixel density.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -10,7 +10,7 @@ import { writePngGrid } from './png.mjs';
 const require = createRequire(import.meta.url);
 const input = path.resolve(process.argv[2] || '');
 const output = path.resolve(process.argv[3] || path.dirname(input));
-const RENDER_SCALE = Number(process.argv[4] || 2);
+const RENDER_SCALE = Number(process.argv[4] || 1);
 const WIDTH = 1080, MAX_HEIGHT = 3600, MAX_CANVAS_WIDTH = 32000, MAX_CANVAS_PIXELS = 80_000_000;
 
 async function loadPlaywright() {

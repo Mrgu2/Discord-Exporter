@@ -236,6 +236,9 @@ def make_handler(application):
                     except ValueError:
                         raise ValueError('稿件 ID 无效') from None
                     data.setdefault('target','main')
+                    data.setdefault('render_scale',1)
+                    if type(data['render_scale']) is not int or data['render_scale'] not in (1,2):
+                        raise ValueError('导出清晰度须为标准 1× 或 HiDPI 2×')
                     if data['target'] not in {'main','mobile','all'}:
                         raise ValueError('图片类型须为 main、mobile 或 all')
                     if 'force' in data and not isinstance(data['force'],bool):

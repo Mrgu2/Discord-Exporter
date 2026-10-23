@@ -16,6 +16,7 @@
   let currentView = 'workspace';
   let draftSearch = '';
   let renderPending = new Set();
+  const renderScales = new Map();
   let remoteRenderJobs = [];
   let lastJobSeen = null;
   let draftDatesTouched = false;
@@ -327,12 +328,29 @@
     return seconds < 60 ? `${seconds} 秒` : `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`;
   }
   function getDraftId(draft) { return String(first(draft.id, draft.draft_id, '')); }
+  function selectedRenderScale(draft) { return renderScales.get(getDraftId(draft)) || 1; }
+  function selectedImageVariant(draft, scale = selectedRenderScale(draft)) {
+    const variants = draft.image_variants || {};
+    const columns = Array.isArray(draft.single_columns) ? draft.single_columns : [];
+    const legacy = !Object.keys(variants).length;
+    const variant = variants[String(scale)] || (legacy ? {...draft,
+      images:Number(draft.render_scale || 1) === scale ? draft.images : [],
+      single_columns:columns.map(column => Number(column.render_scale || draft.render_scale || 1) === scale ? column
+        : {title:column.title,channel_id:column.channel_id,file:column.file,images:[]})} : {});
+    return {
+      ...variant,
+      images: Array.isArray(variant.images) ? variant.images : [],
+      single_columns: Array.isArray(variant.single_columns) ? variant.single_columns
+        : columns.map(column => ({ title: column.title, channel_id: column.channel_id, file: column.file, images: [] })),
+    };
+  }
   function draftURL(draft) {
     const id = getDraftId(draft);
     return id ? `/drafts/${encodeURIComponent(id)}/` : null;
   }
   function draftRow(draft) {
     const row = node('article', 'draft-row');
+    row.dataset.draftId = getDraftId(draft);
     const mark = node('span', 'document-icon');
     mark.setAttribute('aria-hidden', 'true');
     const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -356,7 +374,6 @@
     if (messageCount !== undefined) meta.append(node('span', '', `${number(messageCount)} 条消息`));
     if (draft.mode === 'model') meta.append(node('span', '', '模型整理'));
     if (draft.layout) meta.append(node('span', '', { stacked: '上下分区拼图', horizontal: '左右分区高清图', collage: '自动拼版', board: '四栏拼版', qa: '问答页' }[draft.layout] || draft.layout));
-    if (draft.render_scale === 2) meta.append(node('span', '', '2× HiDPI'));
     if (draft.audio?.complete) meta.append(node('span', '', `${draft.audio.complete} 条语音转写`));
     if (Array.isArray(draft.warnings) && draft.warnings.length) meta.append(node('span', 'draft-state', `${draft.warnings.length} 项待核对`));
     if (draft.error) meta.append(node('span', 'draft-state failed', typeof draft.error === 'string' ? draft.error : draft.error.message || '生成失败'));
@@ -367,22 +384,35 @@
       if (draft.manuscript_url) {
         const manuscript = node('a', 'text-button', '文字稿'); manuscript.href = draft.manuscript_url; manuscript.download = ''; actions.append(manuscript);
       }
-      const images = Array.isArray(draft.images) ? draft.images : [];
+      const scale = selectedRenderScale(draft);
+      const variant = selectedImageVariant(draft, scale);
+      const density = node('select', 'export-density'); density.setAttribute('aria-label', '图片清晰度');
+      for (const [value, label] of [[1, '标准 · 1×'], [2, 'HiDPI · 2×']]) {
+        const option = node('option', '', label); option.value = String(value); density.append(option);
+      }
+      density.value = String(scale);
+      density.addEventListener('change', () => {
+        const list = density.closest('#recent-drafts, #all-drafts');
+        renderScales.set(getDraftId(draft), Number(density.value)); renderDrafts(true);
+        list?.querySelector(`[data-draft-id="${CSS.escape(getDraftId(draft))}"] .export-density`)?.focus();
+      });
+      actions.append(density);
+      const images = variant.images;
       if (images.length) {
         const viewImages = node('button', 'text-button', '查看长图'); viewImages.type = 'button';
-        viewImages.addEventListener('click', () => openPreview(images, draft.title || '稿件长图')); actions.append(viewImages);
-        const download = node('a','text-button',images.length === 1 ? '下载高清图' : '下载第 1 张');
-        download.href = images[0]; download.download = `${draft.title || '稿件'}-高清.png`; actions.append(download);
+        viewImages.addEventListener('click', () => openPreview(images, `${draft.title || '稿件长图'} · ${scale}×`)); actions.append(viewImages);
+        const download = node('a','text-button',images.length === 1 ? '下载图片' : '下载第 1 张');
+        download.href = images[0]; download.download = `${draft.title || '稿件'}-${scale}x.png`; actions.append(download);
       }
-      const columns = Array.isArray(draft.single_columns) ? draft.single_columns : [];
+      const columns = variant.single_columns;
       if (columns.length) {
         const readyColumns = columns.filter(column => column.images?.length);
         const viewColumns = node('button', 'text-button', readyColumns.length === columns.length ? '分栏图' : renderBusy(draft,'mobile') ? '分栏图生成中…' : '生成分栏图'); viewColumns.type = 'button';
         viewColumns.disabled = renderBusy(draft,'mobile');
         viewColumns.addEventListener('click', () => readyColumns.length === columns.length
-          ? window.ArchivePreview?.openGroups(readyColumns,`${draft.title || '稿件'} · 分栏图`) : renderImage(draft,'mobile')); actions.append(viewColumns);
+          ? window.ArchivePreview?.openGroups(readyColumns,`${draft.title || '稿件'} · 分栏图 · ${scale}×`) : renderImage(draft,'mobile')); actions.append(viewColumns);
       }
-      const imageReady = Boolean(images.length || first(draft.image_path, draft.long_image_path, draft.image_url, draft.png_path, draft.rendered_at));
+      const imageReady = Boolean(images.length);
       const render = node('button', 'text-button', renderBusy(draft,'main') ? '图片生成中…' : imageReady ? '更新图片' : '生成图片');
       render.type = 'button'; render.disabled = renderBusy(draft,'main'); render.addEventListener('click', () => renderImage(draft)); actions.append(render);
     } else actions.append(node('span', `draft-state${failed ? ' failed' : ''}`, statusNames[draft.status] || draft.status || '准备中'));
@@ -395,7 +425,7 @@
   }
   function renderDrafts(force = false) {
     const drafts = Array.isArray(snapshot?.drafts) ? snapshot.drafts : [];
-    const signature = JSON.stringify(drafts) + draftSearch + [...renderPending].join(',') + JSON.stringify(remoteRenderJobs);
+    const signature = JSON.stringify(drafts) + draftSearch + [...renderPending].join(',') + JSON.stringify(remoteRenderJobs) + JSON.stringify([...renderScales]);
     if (!force && signature === lastDraftSignature) return;
     lastDraftSignature = signature;
     const recent = drafts.slice(0, 3);
@@ -555,25 +585,25 @@
     catch (error) { showToast(error.message, true); }
     finally { pendingAction = null; await refresh(); }
   }
-  function renderBusy(draft,target) {
+  function renderBusy(draft,target,scale=selectedRenderScale(draft)) {
     const id = getDraftId(draft);
-    return renderPending.has(`${id}:${target}`) || remoteRenderJobs.some(job => job.draft_id === id && [target,'all'].includes(job.target || 'main'));
+    return renderPending.has(`${id}:${target}:${scale}`) || remoteRenderJobs.some(job => job.draft_id === id && Number(job.render_scale || 1) === scale && [target,'all'].includes(job.target || 'main'));
   }
-  async function renderImage(draft,target='main') {
+  async function renderImage(draft,target='main',scale=selectedRenderScale(draft)) {
     const id = getDraftId(draft);
-    if (!id || renderBusy(draft,target)) return;
-    const key = `${id}:${target}`;
+    if (!id || renderBusy(draft,target,scale)) return;
+    const key = `${id}:${target}:${scale}`;
     let jobId;
     renderPending.add(key); renderDrafts(true);
     try {
-      const result = await post('/api/render', { draft_id: id,target });
+      const result = await post('/api/render', { draft_id: id,target,render_scale:scale });
       jobId = result.id;
-      showToast(result.deduplicated ? '这份图片已经在生成。' : target === 'mobile' ? '正在生成分栏图，完成后可按频道查看。' : '正在生成高清主图，完成后可直接下载。');
+      showToast(result.deduplicated ? '这份图片已经在生成。' : target === 'mobile' ? '正在生成分栏图，完成后可按频道查看。' : '正在生成主图，完成后可直接下载。');
     } catch (error) { showToast(error.message, true); }
     finally {
       await refresh(); renderPending.delete(key); renderDrafts(true);
       if (jobId && snapshot?.state?.last_job_id === jobId && snapshot.state.last_job_status === 'success')
-        showToast(target === 'mobile' ? '分栏图已就绪。' : '高清图已就绪。');
+        showToast(target === 'mobile' ? '分栏图已就绪。' : '图片已就绪。');
     }
   }
   function updateClock() {

@@ -24,12 +24,12 @@ class ImageSources(HTMLParser):
             self.sources.append(attributes.get('data-local-src') or attributes.get('src') or '')
 
 
-def fingerprint(input_path, root):
+def fingerprint(input_path, root, render_scale=1):
     input_path,root = Path(input_path),Path(root)
     code = Path(__file__).resolve().parent.parent
     paths = [input_path,code/'scripts/render.mjs',code/'scripts/png.mjs',code/'web/manuscript.css',code/'web/reading.css']
     parser = ImageSources();parser.feed(input_path.read_text())
-    digest = hashlib.sha256(b'native-2x-render-v1')
+    digest = hashlib.sha256(f'native-render-v2:{render_scale}'.encode())
     for source in parser.sources:
         digest.update(source.encode())
         url = urlsplit(source)

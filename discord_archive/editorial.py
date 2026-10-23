@@ -449,7 +449,9 @@ class DraftService:
                 continue
         return sorted(result,key=lambda draft:draft.get("created_at",""),reverse=True)
 
-    def render(self, draft_id, target='all', force=False):
+    def render(self, draft_id, target='all', force=False, render_scale=1):
+        if type(render_scale) is not int or render_scale not in (1,2):
+            raise ValueError('导出清晰度须为标准 1× 或 HiDPI 2×')
         if target not in {'all','main','mobile'}:
             raise ValueError('图片类型须为 main、mobile 或 all')
         folder = self._folder(draft_id)
@@ -458,6 +460,35 @@ class DraftService:
             raise ValueError("生成长图需要 Node.js，请先安装 Node.js 后重试。")
         script = Path(__file__).resolve().parent.parent/"scripts"/"render.mjs"
         metadata = json.loads((folder/"metadata.json").read_text(encoding="utf-8"))
+        variant_fields = ('images','image_url','rendered_at','layout_mode','image_dimensions','image_coverage',
+            'render_scale','css_dimensions','pixel_font_sizes','render_verification','single_columns')
+        variants = metadata.setdefault('image_variants',{})
+        def empty_variant(scale):
+            return {'images':[],'image_url':None,'rendered_at':None,'layout_mode':None,
+                'image_dimensions':[],'image_coverage':None,'render_scale':scale,'css_dimensions':[],
+                'pixel_font_sizes':[],'render_verification':{},'single_columns':[
+                    {**{key:column[key] for key in ('title','channel_id','url','file') if key in column},'images':[]}
+                    for column in metadata.get('single_columns',[])]}
+        # Older mobile-only renders have density on each column, with no
+        # top-level density. Migrate those independently from the main image.
+        for scale in (1,2):
+            main_matches = bool(metadata.get('images')) and (metadata.get('render_scale') or 1) == scale
+            column_matches = [bool(column.get('images')) and (column.get('render_scale') or metadata.get('render_scale') or 1) == scale
+                for column in metadata.get('single_columns',[])]
+            if (main_matches or any(column_matches)) and str(scale) not in variants:
+                legacy = empty_variant(scale)
+                if main_matches:
+                    legacy.update({key:metadata.get(key) for key in variant_fields if key not in {'single_columns','render_scale'}})
+                for saved,source,matches in zip(legacy['single_columns'],metadata.get('single_columns',[]),column_matches):
+                    if matches:
+                        saved.update(source)
+                variants[str(scale)] = legacy
+        variant = variants.setdefault(str(render_scale),empty_variant(render_scale))
+        density_folder = folder/f'scale-{render_scale}'
+        def publish():
+            metadata.update(variant)
+            metadata['export_scale'] = render_scale
+            atomic_json(folder/'metadata.json',metadata)
         cache_path = folder/'render-cache.json'
         try:
             cache = json.loads(cache_path.read_text()) if cache_path.exists() else {}
@@ -465,46 +496,49 @@ class DraftService:
             cache = {}
         hits = []
         def render_file(input_path,output_path,key):
-            signature = render_cache.fingerprint(input_path,self.root)
-            cached = None if force else render_cache.reuse(cache.get(key),output_path,signature)
+            signature = render_cache.fingerprint(input_path,self.root,render_scale)
+            cache_key = f'scale-{render_scale}:{key}'
+            cached = None if force else render_cache.reuse(cache.get(cache_key),output_path,signature)
             if cached:
                 hits.append(key)
                 return cached
-            result = subprocess.run([node,str(script),str(input_path),str(output_path)],capture_output=True,text=True,timeout=180)
+            result = subprocess.run([node,str(script),str(input_path),str(output_path),str(render_scale)],capture_output=True,text=True,timeout=180)
             if result.returncode:
                 safe_error = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "浏览器渲染失败"
                 raise ValueError(safe_error[:500])
             rendered = json.loads(result.stdout)
             # Older renderer results describe 1x pixels; never label them HiDPI.
             rendered.setdefault('render_scale',1)
+            if rendered['render_scale'] != render_scale:
+                raise ValueError('渲染器没有按所选倍率输出，请重试')
             saved = render_cache.receipt(rendered,output_path,signature)
             if saved:
-                cache[key] = saved
+                cache[cache_key] = saved
                 atomic_json(cache_path,cache)
             return rendered
         verification_keys=('source_coverage','image_coverage','text_coverage','reading_order','topic_integrity','body_font_sizes','blank_ratio','structure','raster_tiles','bands','render_scale','css_dimensions','pixel_font_sizes')
         identity = folder.name
         rendered = {}
         if target in {'all','main'}:
-            rendered = render_file(folder/"index.html",folder,'main')
-            images = [f"/output/{identity}/{Path(path).name}" for path in rendered["images"]]
-            metadata.update(images=images,rendered_at=iso_time(),image_url=images[0] if images else None,
+            rendered = render_file(folder/"index.html",density_folder,'main')
+            images = [f"/output/{identity}/{density_folder.name}/{Path(path).name}" for path in rendered["images"]]
+            variant.update(images=images,rendered_at=iso_time(),image_url=images[0] if images else None,
                 layout_mode=rendered.get("layout_mode"),image_dimensions=rendered.get("dimensions",[]),image_coverage=rendered.get('image_coverage'),
                 render_scale=rendered['render_scale'],css_dimensions=rendered.get('css_dimensions',[]),pixel_font_sizes=rendered.get('pixel_font_sizes',[]),
                 render_verification={key:rendered.get(key) for key in verification_keys})
             # Publish the main export before optional phone columns. A failure
             # in a later column cannot hide an already verified main image.
-            atomic_json(folder/"metadata.json",metadata)
-        for column in metadata.get("single_columns",[]) if target in {'all','mobile'} else []:
-            subfolder = folder/f'mobile-{column["channel_id"]}'
+            publish()
+        for column in variant.get("single_columns",[]) if target in {'all','mobile'} else []:
+            subfolder = density_folder/f'mobile-{column["channel_id"]}'
             single = render_file(folder/column["file"],subfolder,f'mobile:{column["channel_id"]}')
-            column["images"] = [f'/output/{identity}/{subfolder.name}/{Path(path).name}' for path in single["images"]]
+            column["images"] = [f'/output/{identity}/{density_folder.name}/{subfolder.name}/{Path(path).name}' for path in single["images"]]
             column['image_coverage'] = single.get('image_coverage')
             column.update(image_dimensions=single.get('dimensions',[]),render_scale=single['render_scale'],
                 css_dimensions=single.get('css_dimensions',[]),pixel_font_sizes=single.get('pixel_font_sizes',[]))
             column['render_verification'] = {key:single.get(key) for key in verification_keys}
-            atomic_json(folder/"metadata.json",metadata)
-        atomic_json(folder/"metadata.json",metadata)
+            publish()
+        publish()
         return {"images":metadata.get('images',[]),"dimensions":metadata.get('image_dimensions',[]),"layout_mode":metadata.get('layout_mode'),
             "render_scale":metadata.get('render_scale'),"css_dimensions":metadata.get('css_dimensions',[]),"pixel_font_sizes":metadata.get('pixel_font_sizes',[]),
             "panel_heights":rendered.get("panel_heights",[]),"single_columns":metadata.get("single_columns",[]),

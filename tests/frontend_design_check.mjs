@@ -57,8 +57,10 @@ try {
     assert.equal(await page.locator('#draft-layout').inputValue(), 'horizontal');
     assert.match(await page.locator('#draft-options-label').innerText(), /左右分区高清图/);
     assert.match(await page.locator('#recent-drafts .draft-row').first().innerText(), /左右分区高清图/);
-    assert.match(await page.locator('#recent-drafts .draft-row').first().innerText(), /2× HiDPI/);
-    assert.doesNotMatch(await page.locator('#recent-drafts .draft-row').nth(1).innerText(), /HiDPI/);
+    const density=page.locator('#recent-drafts .draft-row').first().getByRole('combobox',{name:'图片清晰度'});
+    assert.equal(await density.inputValue(),'1');
+    assert.equal(await density.locator('option[value="2"]').count(),1);
+    assert.doesNotMatch(await page.locator('#recent-drafts .draft-row').nth(1).locator('.draft-meta').innerText(), /HiDPI/);
     const manuscript = page.locator('#recent-drafts .draft-row').first().getByRole('link', {name: '文字稿', exact: true});
     assert.equal(await manuscript.getAttribute('href'), '/output/fictional-one/manuscript.md');
     assert.equal(await manuscript.getAttribute('download'), '');

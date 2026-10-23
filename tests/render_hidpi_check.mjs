@@ -23,8 +23,8 @@ function render(name,scale){
  const child=spawnSync(process.execPath,args,{encoding:'utf8',timeout:180000});assert.equal(child.status,0,child.stderr);
  return JSON.parse(child.stdout);
 }
-const baseline=render('one',1),hidpi=render('two');
-assert.equal(hidpi.render_scale,2,'Default export is not HiDPI');assert.equal(baseline.render_scale,1);
+const baseline=render('one'),hidpi=render('two',2);
+assert.equal(hidpi.render_scale,2,'Selected export is not HiDPI');assert.equal(baseline.render_scale,1,'Default export is not standard');
 assert.deepEqual(hidpi.css_dimensions,baseline.css_dimensions,'Density changed the composition');
 assert.deepEqual(hidpi.dimensions,hidpi.css_dimensions.map(({width,height})=>({width:width*2,height:height*2})));
 assert.ok(hidpi.pixel_font_sizes.includes('54px'),'27px body text did not receive 54 output pixels');

@@ -42,14 +42,16 @@
     if(!fitWidth)return;
     const box=stage.getBoundingClientRect();
     const px=x===undefined?0:x-box.left-box.width/2, py=y===undefined?0:y-box.top-box.height/2;
-    next=clamp(next,1,Math.max(6,picture.naturalWidth/fitWidth));
+    const minimum=Math.min(1,picture.naturalWidth/(fitWidth*devicePixelRatio));
+    next=clamp(next,minimum,Math.max(6,picture.naturalWidth/fitWidth));
     const factor=next/scale;tx=px-(px-tx)*factor;ty=py-(py-ty)*factor;scale=next;paint();
   }
   function showPage(next) {
     index=clamp(next,0,pages.length-1);const current=++generation;
     message.textContent='正在载入图片…';message.hidden=false;picture.style.visibility='hidden';
     caption.textContent=`${dialog.dataset.title || '长图'} · ${index+1}/${pages.length}`;
-    download.href=pages[index];download.download=pages[index].split('/').pop()||'长图.png';
+    const density=pages[index].match(/\/scale-([12])\//)?.[1];
+    download.href=pages[index];download.download=density?`${dialog.dataset.title||'稿件'}-${density}x-${String(index+1).padStart(2,'0')}.png`:pages[index].split('/').pop()||'长图.png';
     picture.onload=()=>{if(current!==generation)return;message.hidden=true;picture.style.visibility='visible';reset();};
     picture.onerror=()=>{if(current===generation)message.textContent='图片暂时无法读取，可关闭后重试。';};
     picture.src=pages[index];
@@ -59,7 +61,7 @@
   function create() {
     dialog=element('dialog','image-preview');dialog.setAttribute('aria-label','查看长图');
     const bar=element('div','image-preview-bar');caption=element('span','image-preview-title');bar.append(caption);
-    const buttons=[['previous','上一张'],['next','下一张'],['out','−'],['in','＋'],['fit','适应屏幕']];
+    const buttons=[['previous','上一张'],['next','下一张'],['out','−'],['in','＋'],['fit','适应屏幕'],['native','原始像素']];
     for(const [action,text] of buttons){const button=element('button','',text);button.type='button';button.dataset.action=action;button.setAttribute('aria-label',{in:'放大',out:'缩小'}[action]||text);bar.append(button);}
     percent=element('span','image-preview-status','100%');bar.append(percent);
     download=element('a','','下载');bar.append(download);
@@ -69,7 +71,7 @@
     stage=element('div','image-preview-stage');picture=element('img');picture.alt='生成的长图';picture.draggable=false;message=element('div','image-preview-status-message');stage.append(picture,message);
     dialog.append(bar,stage,element('div','image-preview-hint','滚轮或双指缩放 · 放大后拖动 · 双击复位 · Esc 关闭'));
     document.body.append(dialog);
-    bar.addEventListener('click',event=>{const action=event.target.closest('button')?.dataset.action;if(action==='close')dialog.close();if(action==='in')zoom(scale*1.3);if(action==='out')zoom(scale/1.3);if(action==='fit')reset(true);if(action==='previous')showPage(index-1);if(action==='next')showPage(index+1);});
+    bar.addEventListener('click',event=>{const action=event.target.closest('button')?.dataset.action;if(action==='close')dialog.close();if(action==='in')zoom(scale*1.3);if(action==='out')zoom(scale/1.3);if(action==='fit')reset(true);if(action==='native'&&fitWidth){scale=picture.naturalWidth/(fitWidth*devicePixelRatio);tx=Math.max(0,(fitWidth*scale-stage.clientWidth)/2);ty=Math.max(0,(fitHeight*scale-stage.clientHeight)/2);paint();}if(action==='previous')showPage(index-1);if(action==='next')showPage(index+1);});
     stage.addEventListener('wheel',event=>{event.preventDefault();zoom(scale*Math.exp(-event.deltaY*.002),event.clientX,event.clientY);},{passive:false});
     stage.addEventListener('dblclick',event=>scale>1.05?reset(true):zoom(2,event.clientX,event.clientY));
     function begin(){const points=[...pointers.values()];gesture=points.length===1?{type:'drag',point:points[0],tx,ty,started:false}:points.length>=2?{type:'pinch',distance:Math.max(1,distance(points)),center:midpoint(points),scale}:null;}

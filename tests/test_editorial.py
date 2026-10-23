@@ -95,7 +95,7 @@ class EditorialTests(unittest.TestCase):
         with patch('discord_archive.editorial.shutil.which',return_value='/fixture/node'), \
                 patch('discord_archive.editorial.subprocess.run') as run:
             run.side_effect = [type('Result',(),{'returncode':0,'stdout':json.dumps(output)}) for output in outputs]
-            result = self.service.render(draft['id'])
+            result = self.service.render(draft['id'],render_scale=2)
         stored = json.loads((Path(draft['path']).parent/'metadata.json').read_text())
         for actual,expected in [(stored,outputs[0]),(stored['single_columns'][0],outputs[1])]:
             self.assertEqual(actual['image_dimensions'],expected['dimensions'])

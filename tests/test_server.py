@@ -53,7 +53,14 @@ class ServerBoundaryTests(unittest.TestCase):
         handler=self.handler('/api/render',{'draft_id':identity})
         handler.mutation()
         self.assertEqual(handler.send.call_args.args[0],202)
-        self.app.worker.submit.assert_called_once_with('render',{'draft_id':identity,'target':'main'})
+        self.app.worker.submit.assert_called_once_with('render',{'draft_id':identity,'target':'main','render_scale':1})
+
+    def test_render_rejects_invalid_density_before_enqueue(self):
+        for value in [0,3,True,'2',1.5]:
+            handler=self.handler('/api/render',{'draft_id':'274ee8a1-f0de-4d97-8987-536815bd5671','render_scale':value})
+            handler.mutation()
+            self.assertEqual(handler.send.call_args.args[0],400)
+        self.app.worker.submit.assert_not_called()
 
     def test_path_traversal_and_dns_rebinding_rejected(self):
         handler=self.handler('/api/status',host='evil.invalid:8765',method='GET')

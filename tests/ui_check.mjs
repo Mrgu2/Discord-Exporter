@@ -118,10 +118,7 @@ try{
     await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
     // At one source pixel per physical display pixel, stripes must stay black/white and the
     // far right must retain its own colour rather than wrap the first column.
-    const nativeZoomRatio=await page.locator('.image-preview img').evaluate(image=>image.naturalWidth/(devicePixelRatio*image.getBoundingClientRect().width));
-    // Touch emulation does not route a hardware mouse wheel. Dispatch the same
-    // viewer zoom event to establish an exact physical-pixel test boundary.
-    await page.locator('.image-preview-stage').dispatchEvent('wheel',{deltaY:-Math.log(nativeZoomRatio)/.002,clientX:wx,clientY:wy});
+    await page.locator('.image-preview [data-action="native"]').click();
     await page.waitForFunction(()=>{
       const image=document.querySelector('.image-preview img');return Math.abs(image.getBoundingClientRect().width*devicePixelRatio-image.naturalWidth)<1;
     },null,{timeout:5000}).catch(async error=>{

@@ -66,6 +66,13 @@ class WorkerRecoveryTests(unittest.TestCase):
         self.assertIsNone(self.worker.state['offline_since'])
         self.assertIsNone(self.worker.state['retry_at'])
 
+    def test_render_reservations_are_separate_for_each_density(self):
+        one=self.worker.submit('render',{'draft_id':'fixture','render_scale':1})
+        two=self.worker.submit('render',{'draft_id':'fixture','render_scale':2})
+        self.assertNotEqual(one['id'],two['id'])
+        self.assertEqual(self.worker.submit('render',{'draft_id':'fixture','render_scale':2})['id'],two['id'])
+        self.assertEqual({job['render_scale'] for job in self.worker.status()[0]['render_jobs']},{1,2})
+
     def run_one_failure(self, error):
         self.worker.stop_event.clear()
         self.worker.submit("capture", {"trigger": "manual"})

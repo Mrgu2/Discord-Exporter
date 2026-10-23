@@ -24,13 +24,13 @@ class RenderTargetTests(unittest.TestCase):
         self.temporary.cleanup()
 
     def render(self,command,**options):
-        output=Path(command[3]);output.mkdir(exist_ok=True)
+        scale=int(command[4]);output=Path(command[3]);output.mkdir(parents=True,exist_ok=True)
         target=output/'long-01.png'
         # A deterministic PNG header suffices for cache transport tests; actual
         # PNG decode/CRC coverage lives in png_check and renderer acceptance.
         target.write_bytes(b'\x89PNG\r\n\x1a\n'+b'\0\0\0\rIHDR'+b'\0\0\0\2\0\0\0\2'+b'fixture')
         return type('Result',(),{'returncode':0,'stdout':json.dumps({'images':[str(target)],
-            'render_scale':2,'dimensions':[{'width':2,'height':2}],'css_dimensions':[{'width':1,'height':1}]})})()
+            'render_scale':scale,'dimensions':[{'width':2,'height':2}],'css_dimensions':[{'width':2/scale,'height':2/scale}]})})()
 
     def test_main_only_then_mobile_preserves_main_and_warm_run_starts_no_browser(self):
         with patch('discord_archive.editorial.shutil.which',return_value='/fixture/node'), \
@@ -52,7 +52,7 @@ class RenderTargetTests(unittest.TestCase):
         with patch('discord_archive.editorial.shutil.which',return_value='/fixture/node'), \
                 patch('discord_archive.editorial.subprocess.run',side_effect=self.render) as runner:
             self.service.render(self.identity,target='main')
-            (self.folder/'long-01.png').write_bytes(b'corrupted')
+            (self.folder/'scale-1/long-01.png').write_bytes(b'corrupted')
             self.service.render(self.identity,target='main')
             (self.folder/'index.html').write_text('changed HTML')
             self.service.render(self.identity,target='main')
@@ -76,7 +76,46 @@ class RenderTargetTests(unittest.TestCase):
             self.service.render(self.identity)
         saved=json.loads((self.folder/'metadata.json').read_text())
         self.assertTrue(saved['images'])
-        self.assertEqual(saved['render_scale'],2)
+        self.assertEqual(saved['render_scale'],1)
+
+    def test_density_variants_keep_files_and_caches_independent(self):
+        with patch('discord_archive.editorial.shutil.which',return_value='/fixture/node'), \
+                patch('discord_archive.editorial.subprocess.run',side_effect=self.render) as runner:
+            one=self.service.render(self.identity,target='main')
+            two=self.service.render(self.identity,target='main',render_scale=2)
+            again=self.service.render(self.identity,target='main',render_scale=1)
+        self.assertEqual(runner.call_count,2)
+        self.assertEqual(one['render_scale'],1)
+        self.assertEqual(two['render_scale'],2)
+        self.assertNotEqual(one['images'],two['images'])
+        self.assertEqual(again['cache_hits'],['main'])
+        self.assertEqual(again['draft']['image_variants']['2']['images'],two['images'])
+        self.assertTrue((self.folder/'scale-1/long-01.png').is_file())
+        self.assertTrue((self.folder/'scale-2/long-01.png').is_file())
+
+    def test_legacy_hidpi_remains_available_after_standard_export(self):
+        original={'images':[f'/output/{self.identity}/long-01.png'],'render_scale':2,
+            'single_columns':[{'channel_id':'100','title':'QA','file':'single-100.html','images':['legacy-mobile.png']}]}
+        atomic_json(self.folder/'metadata.json',original)
+        with patch('discord_archive.editorial.shutil.which',return_value='/fixture/node'), \
+                patch('discord_archive.editorial.subprocess.run',side_effect=self.render):
+            result=self.service.render(self.identity,target='main')
+        old=result['draft']['image_variants']['2']
+        self.assertEqual(old['images'],original['images'])
+        self.assertEqual(old['single_columns'][0]['images'],['legacy-mobile.png'])
+        self.assertEqual(result['single_columns'][0]['images'],[])
+
+    def test_legacy_mobile_only_density_is_inferred_from_column(self):
+        atomic_json(self.folder/'metadata.json',{'images':[], 'single_columns':[
+            {'channel_id':'100','title':'QA','file':'single-100.html','render_scale':2,'images':['legacy-2x-mobile.png']}]})
+        with patch('discord_archive.editorial.shutil.which',return_value='/fixture/node'), \
+                patch('discord_archive.editorial.subprocess.run',side_effect=self.render):
+            result=self.service.render(self.identity,target='main')
+        self.assertEqual(result['single_columns'][0]['images'],[])
+        old=result['draft']['image_variants']['2']
+        self.assertEqual(old['images'],[])
+        self.assertEqual(old['single_columns'][0]['images'],['legacy-2x-mobile.png'])
+        self.assertEqual(old['single_columns'][0]['render_scale'],2)
 
 
 if __name__ == '__main__':

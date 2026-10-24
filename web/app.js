@@ -30,6 +30,7 @@
   let savingChannels = false;
   let loginRequired = false;
   const isLocal = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(location.hostname);
+  const exportDefaults = { name_prefix: '答疑存档', date_format: 'YYYY-MM-DD', sequence_digits: 2, separator: '-', copy_directory: '' };
   function displayTimezone() { return publicConfig.timezone && publicConfig.timezone !== 'auto' ? publicConfig.timezone : Intl.DateTimeFormat().resolvedOptions().timeZone; }
 
   function node(tag, className, text) {
@@ -143,8 +144,40 @@
     $('model-enabled').checked = Boolean(model.enabled);
     $('model-base-url').value = model.base_url || '';
     $('model-name').value = model.model || '';
+    const exports = { ...exportDefaults, ...publicConfig.export };
+    $('export-prefix').value = exports.name_prefix;
+    $('export-date-format').value = exports.date_format;
+    $('export-sequence-digits').value = String(exports.sequence_digits);
+    $('export-separator').value = exports.separator;
+    $('export-copy-directory').value = exports.copy_directory || '';
+    updateExportPreview();
     if (!configInitialized) $('draft-mode').value = 'evidence';
     configInitialized = true;
+  }
+  function updateExportPreview() {
+    const date = snapshot?.drafts?.find(draft => /^\d{4}-\d{2}-\d{2}$/.test(draft.date || ''))?.date || snapshot?.state?.market_day || dateOnly();
+    const formattedDate = $('export-date-format').value === 'YYYYMMDD' ? date.replaceAll('-', '') : date;
+    const digits = Number($('export-sequence-digits').value) || 2;
+    const separator = $('export-separator').value || '-';
+    text('export-name-preview', `${$('export-prefix').value.trim() || exportDefaults.name_prefix}${separator}${formattedDate}${separator}${'1'.padStart(digits, '0')}.png`);
+  }
+  function setExportDirectoryAccess() {
+    $('export-copy-directory').readOnly = !isLocal;
+    $('export-directory-choose').disabled = !isLocal;
+    $('export-directory-phone-note').hidden = isLocal;
+  }
+  async function chooseExportDirectory() {
+    if (!isLocal) return;
+    const button = $('export-directory-choose');
+    button.disabled = true; button.textContent = '正在选择…';
+    try {
+      const result = await post('/api/export-directory', { action: 'choose' });
+      if (typeof result.path === 'string' && result.path) {
+        $('export-copy-directory').value = result.path;
+        settingsDirty = true; text('config-save-status', '有未保存的设置。');
+      }
+    } catch (error) { showToast(error.message, true); }
+    finally { button.disabled = false; button.textContent = '选择文件夹'; }
   }
   function renderState(data) {
     remoteRenderJobs = data.state?.render_jobs || [];
@@ -391,6 +424,13 @@
     if (draft.audio?.complete) meta.append(node('span', '', `${draft.audio.complete} 条语音转写`));
     const warningCount = first(draft.warning_count, Array.isArray(draft.warnings) ? draft.warnings.length : 0);
     if (warningCount) meta.append(node('span', 'draft-state', `${warningCount} 项待核对`));
+    if (draft.export_copy?.error) {
+      const copyState = node('button', 'draft-state failed export-copy-error', '自动另存未完成');
+      copyState.type = 'button'; copyState.title = draft.export_copy.error;
+      copyState.setAttribute('aria-label', '自动另存未完成，查看原因');
+      copyState.addEventListener('click', () => showToast(`${draft.export_copy.error}。检查 Mac 目录后重新生成图片；现有图片仍可下载。`, true));
+      meta.append(copyState);
+    }
     if (draft.error) meta.append(node('span', 'draft-state failed', typeof draft.error === 'string' ? draft.error : draft.error.message || '生成失败'));
     info.append(title, meta); row.append(info);
     const actions = node('div', 'draft-actions');
@@ -573,7 +613,14 @@
       const clock = (minutes) => `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
       $('window-start').value = clock(16 * 60 - before);
       $('window-end').value = clock(16 * 60 + after);
-      const nextConfig = { ...publicConfig, channels: parseChannels($('channels').value), target_author_id: authorId, target_message_url: targetMessageURL, timezone, market_timezone: marketTimezone, day_boundary_hour: boundary, schedule: { ...publicConfig.schedule, enabled: $('schedule-enabled').checked, interval_minutes: interval, times: parseTimes($('times').value), timezone: marketTimezone, window: { ...publicConfig.schedule?.window, enabled: $('window-enabled').checked, start: $('window-start').value, end: $('window-end').value, every_minutes: windowEvery, weekdays: [0, 1, 2, 3, 4] } }, model: { ...publicConfig.model, enabled: modelEnabled, base_url: $('model-base-url').value.trim(), model: $('model-name').value.trim() } };
+      const namePrefix = $('export-prefix').value.trim();
+      if (!namePrefix || /[\\/:*?"<>|\u0000-\u001f\u007f]/.test(namePrefix)) throw new Error('文件名前缀不能为空，也不能包含路径或特殊符号。');
+      const exportOptions = { ...publicConfig.export, name_prefix: namePrefix, date_format: $('export-date-format').value, sequence_digits: Number($('export-sequence-digits').value), separator: $('export-separator').value };
+      if (isLocal) {
+        exportOptions.copy_directory = $('export-copy-directory').value.trim();
+        if (exportOptions.copy_directory && !/^(\/|~\/|~$)/.test(exportOptions.copy_directory)) throw new Error('另存目录请填写 Mac 上的绝对路径，或选择文件夹。');
+      } else delete exportOptions.copy_directory;
+      const nextConfig = { ...publicConfig, export: exportOptions, channels: parseChannels($('channels').value), target_author_id: authorId, target_message_url: targetMessageURL, timezone, market_timezone: marketTimezone, day_boundary_hour: boundary, schedule: { ...publicConfig.schedule, enabled: $('schedule-enabled').checked, interval_minutes: interval, times: parseTimes($('times').value), timezone: marketTimezone, window: { ...publicConfig.schedule?.window, enabled: $('window-enabled').checked, start: $('window-start').value, end: $('window-end').value, every_minutes: windowEvery, weekdays: [0, 1, 2, 3, 4] } }, model: { ...publicConfig.model, enabled: modelEnabled, base_url: $('model-base-url').value.trim(), model: $('model-name').value.trim() } };
       button.disabled = true; button.textContent = '正在保存…';
       const result = await api('/api/config', { method: 'PUT', body: JSON.stringify(nextConfig) });
       settingsDirty = false;
@@ -683,6 +730,11 @@
   $('draft-layout').addEventListener('change', () => { if (snapshot) renderState(snapshot); });
   $('config-form').addEventListener('submit', saveConfig);
   $('config-form').addEventListener('input', () => { settingsDirty = true; text('config-save-status', '有未保存的设置。'); });
+  for (const id of ['export-prefix', 'export-date-format', 'export-sequence-digits', 'export-separator']) {
+    $(id).addEventListener('input', updateExportPreview);
+    $(id).addEventListener('change', updateExportPreview);
+  }
+  $('export-directory-choose').addEventListener('click', chooseExportDirectory);
   document.querySelectorAll('.credential-form').forEach((form) => form.addEventListener('submit', saveCredential));
   $('draft-search').addEventListener('input', (event) => {
     draftSearch = event.target.value.trim(); clearTimeout(draftSearchTimer);
@@ -713,6 +765,7 @@
   for (const id of ['draft-date', 'draft-start', 'draft-end']) $(id).value = dateOnly();
   for (const id of ['draft-date', 'draft-start', 'draft-end']) $(id).addEventListener('input', () => { draftDatesTouched = true; });
   $('credentials-section').hidden = !isLocal;
+  setExportDirectoryAccess();
   setupDisclosureMotion();
   setView(location.hash.slice(1), false);
   changeScope(); updateClock(); refresh();

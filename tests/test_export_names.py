@@ -68,6 +68,21 @@ class ExportDateTests(unittest.TestCase):
 
 
 class FilenameTests(unittest.TestCase):
+    def test_preferences_snapshot_controls_names_and_preserves_date_semantics(self):
+        metadata={'export_date':'2026-10-22至2026-10-23',
+            'export_preferences':{'name_prefix':'示例周刊','date_format':'YYYYMMDD','sequence_digits':3,'separator':'_'},
+            'export':{'name_prefix':'ignored'}}
+        self.assertEqual(filename(metadata,2,render_scale=2),'示例周刊_20261022至20261023_HiDPI_002.png')
+        self.assertEqual(export_date_label(metadata),'2026-10-22至2026-10-23')
+        metadata['export_preferences']={}
+        self.assertEqual(filename(metadata,1),'答疑存档-2026-10-22至2026-10-23-01.png')
+        del metadata['export_preferences']
+        self.assertTrue(filename(metadata,1).startswith('ignored-'))
+
+    def test_destination_changes_do_not_break_filename_or_exceed_component_limit(self):
+        metadata={'date':'2026-10-23','export_preferences':{'name_prefix':'😀'*40,'copy_directory':'relative-invalid'}}
+        self.assertLessEqual(len(filename(metadata,1,channel_title='中'*80).encode()),255)
+
     def test_main_hidpi_and_channel_names_are_distinct(self):
         metadata={'export_date':'2026-10-23'}
         self.assertEqual(filename(metadata,1),'答疑存档-2026-10-23-01.png')

@@ -15,6 +15,7 @@ import secrets
 import signal
 import socket
 import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -26,6 +27,25 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from discord_archive.settings import Credentials, Settings, access_code
 from discord_archive.store import ArchiveStore
 from discord_archive.worker import Worker
+
+
+def choose_export_directory():
+    if sys.platform != 'darwin':
+        raise ValueError('文件夹选择仅支持 Mac，请填写本机绝对路径')
+    try:
+        result = subprocess.run(['/usr/bin/osascript', '-e',
+            'POSIX path of (choose folder with prompt "选择自动另存目录")'],
+            capture_output=True, text=True, timeout=120)
+    except subprocess.TimeoutExpired:
+        raise ValueError('文件夹选择已超时，请重试或填写路径') from None
+    if result.returncode:
+        if '(-128)' in result.stderr:
+            return {'cancelled': True}
+        raise ValueError('无法打开文件夹选择器，请填写本机绝对路径')
+    path = result.stdout.strip()
+    if not path or not Path(path).is_absolute():
+        raise ValueError('未取得有效的文件夹路径，请重试')
+    return {'path': path}
 
 
 class Application:
@@ -279,9 +299,22 @@ def make_handler(application):
                 if not self.authorized():
                     return self.send(401, {'error': '请先登录手机界面'})
                 if path == '/api/config' and self.command == 'PUT':
+                    old = app.settings.read()
+                    exports = data.get('export', {})
+                    if (not self.local() and isinstance(exports, dict) and 'copy_directory' in exports
+                            and exports['copy_directory'] != old.get('export', {}).get('copy_directory', '')):
+                        return self.send(403, {'error': '自动另存目录请在 Mac 本机修改'})
                     result = app.settings.update(data)
-                    app.worker.reset_attention()
+                    if {key:value for key,value in old.items() if key != 'export'} != {
+                            key:value for key,value in result.items() if key != 'export'}:
+                        app.worker.reset_attention()
                     return self.send(200, result)
+                if path == '/api/export-directory' and self.command == 'POST':
+                    if not self.local():
+                        return self.send(403, {'error': '文件夹选择请在 Mac 本机操作'})
+                    if data.get('action') != 'choose':
+                        raise ValueError('请选择文件夹或填写本机路径')
+                    return self.send(200, choose_export_directory())
                 if path == '/api/credentials':
                     if not self.local():
                         return self.send(403, {'error': '账号凭证请仅在 Mac 本机配置'})

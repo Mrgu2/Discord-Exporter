@@ -3,13 +3,15 @@ import copy
 import hashlib
 import json
 import tempfile
+import subprocess
 import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from app import Application, make_handler
+from app import Application, make_handler, choose_export_directory
+from discord_archive.settings import Settings
 
 
 class ServerBoundaryTests(unittest.TestCase):
@@ -42,6 +44,45 @@ class ServerBoundaryTests(unittest.TestCase):
         handler.headers['Cookie']='archive_session=valid'
         handler.mutation()
         self.assertEqual(handler.send.call_args.args[0],403)
+
+    def test_remote_can_change_naming_but_cannot_change_mac_directory(self):
+        self.app.settings=Settings(self.root)
+        directory=str(self.root/'copies')
+        self.app.settings.update({'export':{'copy_directory':directory}})
+        self.app.sessions['valid']=9999999999
+        for exports,expected in (({'name_prefix':'手机改名'},200),
+                ({'copy_directory':directory,'separator':'_'},200),
+                ({'copy_directory':''},403),({'copy_directory':str(self.root/'other')},403)):
+            handler=self.handler('/api/config',{'export':exports},host='192.168.1.4:8765',client='192.168.1.8',method='PUT')
+            handler.headers['Cookie']='archive_session=valid';handler.mutation()
+            self.assertEqual(handler.send.call_args.args[0],expected)
+            self.assertEqual(self.app.settings.read()['export']['copy_directory'],directory)
+        self.assertEqual(self.app.settings.read()['export']['name_prefix'],'手机改名')
+        self.app.worker.reset_attention.assert_not_called()
+
+    def test_local_directory_chooser_requires_local_authenticated_post_and_valid_action(self):
+        self.app.sessions['valid']=9999999999
+        with patch('app.choose_export_directory',return_value={'path':'/tmp/chosen'}) as chooser:
+            remote=self.handler('/api/export-directory',{'action':'choose'},host='192.168.1.4:8765',client='192.168.1.8')
+            remote.headers['Cookie']='archive_session=valid';remote.mutation()
+            self.assertEqual(remote.send.call_args.args[0],403);chooser.assert_not_called()
+            wrong=self.handler('/api/export-directory',{'action':'other'});wrong.mutation()
+            self.assertEqual(wrong.send.call_args.args[0],400);chooser.assert_not_called()
+            local=self.handler('/api/export-directory',{'action':'choose'});local.mutation()
+            self.assertEqual(local.send.call_args.args,(200,{'path':'/tmp/chosen'}))
+            chooser.assert_called_once_with()
+
+    def test_native_chooser_success_cancel_timeout_and_failure_are_explicit(self):
+        for result,expected in ((SimpleNamespace(returncode=0,stdout='/tmp/chosen/\n',stderr=''),{'path':'/tmp/chosen/'}),
+                (SimpleNamespace(returncode=1,stdout='',stderr='User canceled. (-128)'),{'cancelled':True})):
+            with patch('app.sys.platform','darwin'),patch('app.subprocess.run',return_value=result):
+                self.assertEqual(choose_export_directory(),expected)
+        for failure in (SimpleNamespace(returncode=1,stdout='',stderr='other failure'),
+                SimpleNamespace(returncode=0,stdout='',stderr='')):
+            with patch('app.sys.platform','darwin'),patch('app.subprocess.run',return_value=failure),self.assertRaises(ValueError):
+                choose_export_directory()
+        with patch('app.sys.platform','darwin'),patch('app.subprocess.run',side_effect=subprocess.TimeoutExpired('osascript',120)),self.assertRaisesRegex(ValueError,'超时'):
+            choose_export_directory()
 
     def test_csrf_and_foreign_origin_rejected(self):
         for name,value in [('X-Archive-Key','wrong'),('Origin','https://elsewhere.invalid')]:

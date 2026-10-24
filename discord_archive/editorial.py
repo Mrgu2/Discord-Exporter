@@ -18,11 +18,12 @@ from zoneinfo import ZoneInfo
 
 from .context import build_context, build_context_index
 from .export_names import export_date_label, publish_image
+from .export_copy import copy_export
 from .assets import forwarded_texts, iter_message_assets
 from .media import MediaArchive
 from .readability import choose_reading_groups, clean_reading_text
 from .scheduler import day_bounds, market_day
-from .settings import atomic_json
+from .settings import atomic_json, normalize_export_preferences
 from .speech import SpeechArchive
 from . import render_cache
 from .store import iso_time, parse_time
@@ -231,6 +232,9 @@ class DraftService:
             "day_boundary_hour":config.get("day_boundary_hour",4),
             "audio":audio_summary}
         metadata['export_date'] = export_date_label(metadata,seeds=[item['seed'] for item in items],config=config)
+        metadata['export_preferences'] = {key:value for key,value in
+            normalize_export_preferences(config.get('export',{}),validate_directory=False).items()
+            if key != 'copy_directory'}
         evidence = {"schema_version":1,"title":title,"created_at":now,"selection":selection,
             "target_author_id":author,"warnings":warnings,"groups":source_groups,"contexts":items,"panels":source_panels,"layout":layout,
             "reading":{"decisions":decisions,"visible_panels":panels,"visible_groups":all_groups}}
@@ -482,6 +486,9 @@ class DraftService:
             item['error'] = metadata['error']
         if isinstance(metadata.get('audio'),dict):
             item['audio'] = {'complete':metadata['audio'].get('complete',0)}
+        if isinstance(metadata.get('export_copy'),dict):
+            item['export_copy'] = {key:metadata['export_copy'].get(key) for key in
+                ('enabled','copied','failed','error')}
         def variant(source):
             result = {'images':list(source.get('images') or [])}
             if 'render_scale' in source:
@@ -544,6 +551,12 @@ class DraftService:
             raise ValueError("生成长图需要 Node.js，请先安装 Node.js 后重试。")
         script = Path(__file__).resolve().parent.parent/"scripts"/"render.mjs"
         metadata = json.loads((folder/"metadata.json").read_text(encoding="utf-8"))
+        preferences = normalize_export_preferences(
+            self.settings.read().get('export',{}) if self.settings is not None else
+            metadata.get('export_preferences',metadata.get('export',{})),validate_directory=False)
+        metadata['export_preferences'] = {key:value for key,value in preferences.items() if key != 'copy_directory'}
+        directory = preferences['copy_directory'] if self.settings is not None else ''
+        metadata['export_copy'] = {'enabled':bool(directory),'copied':0,'failed':0,'error':None}
         if not metadata.get('export_date'):
             try:
                 evidence = json.loads((folder/'evidence.json').read_text(encoding='utf-8'))
@@ -585,6 +598,16 @@ class DraftService:
         except (OSError,ValueError):
             cache = {}
         hits = []
+        def copy_published(paths):
+            if not directory:
+                return
+            for sequence,path in enumerate(paths,1):
+                try:
+                    copy_export(path,directory,draft_id=draft_id,render_scale=render_scale,sequence=sequence)
+                    metadata['export_copy']['copied'] += 1
+                except (OSError,ValueError) as exc:
+                    metadata['export_copy']['failed'] += 1
+                    metadata['export_copy']['error'] = str(exc)[:500]
         def render_file(input_path,output_path,key):
             signature = render_cache.fingerprint(input_path,self.root,render_scale)
             cache_key = f'scale-{render_scale}:{key}'
@@ -618,6 +641,7 @@ class DraftService:
                 layout_mode=rendered.get("layout_mode"),image_dimensions=rendered.get("dimensions",[]),image_coverage=rendered.get('image_coverage'),
                 render_scale=rendered['render_scale'],css_dimensions=rendered.get('css_dimensions',[]),pixel_font_sizes=rendered.get('pixel_font_sizes',[]),
                 render_verification={key:rendered.get(key) for key in verification_keys})
+            copy_published(published)
             # Publish the main export before optional phone columns. A failure
             # in a later column cannot hide an already verified main image.
             publish()
@@ -632,6 +656,7 @@ class DraftService:
             column.update(image_dimensions=single.get('dimensions',[]),render_scale=single['render_scale'],
                 css_dimensions=single.get('css_dimensions',[]),pixel_font_sizes=single.get('pixel_font_sizes',[]))
             column['render_verification'] = {key:single.get(key) for key in verification_keys}
+            copy_published(published)
             publish()
         publish()
         return {"images":metadata.get('images',[]),"dimensions":metadata.get('image_dimensions',[]),"layout_mode":metadata.get('layout_mode'),

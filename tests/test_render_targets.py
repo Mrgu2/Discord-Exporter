@@ -9,7 +9,7 @@ from urllib.parse import unquote
 
 from discord_archive.editorial import DraftService
 from discord_archive import render_cache
-from discord_archive.settings import atomic_json
+from discord_archive.settings import atomic_json, Settings
 
 
 class RenderTargetTests(unittest.TestCase):
@@ -48,6 +48,61 @@ class RenderTargetTests(unittest.TestCase):
             self.assertEqual(set(warm['cache_hits']),{'main','mobile:100'})
             self.service.render(self.identity,target='main',force=True)
             self.assertEqual(runner.call_count,3)
+
+    def test_changed_settings_rename_cached_export_and_copy_without_replacing_previous_files(self):
+        self.service.settings=Settings(self.root)
+        directory=self.root/'chosen-exports'
+        self.service.settings.update({'export':{'copy_directory':str(directory)}})
+        metadata=json.loads((self.folder/'metadata.json').read_text())
+        metadata['export_date']='2026-10-23';atomic_json(self.folder/'metadata.json',metadata)
+        with patch('discord_archive.editorial.shutil.which',return_value='/fixture/node'), \
+                patch('discord_archive.editorial.subprocess.run',side_effect=self.render) as runner:
+            first=self.service.render(self.identity,target='main')
+            old=self.root/unquote(first['images'][0]).lstrip('/');before=old.read_bytes()
+            self.service.settings.update({'export':{'name_prefix':'自选名称','date_format':'YYYYMMDD',
+                'separator':'_','sequence_digits':3}})
+            second=self.service.render(self.identity,target='main')
+            self.assertEqual(runner.call_count,1)
+            self.assertEqual(second['cache_hits'],['main'])
+            self.assertEqual(Path(unquote(second['images'][0])).name,'自选名称_20261023_001.png')
+            self.assertEqual(old.read_bytes(),before)
+            self.assertEqual((directory/old.name).read_bytes(),before)
+            self.assertEqual((directory/'自选名称_20261023_001.png').read_bytes(),before)
+            self.assertEqual(second['draft']['export_date'],'2026-10-23')
+            self.assertNotIn('copy_directory',second['draft']['export_preferences'])
+            self.assertEqual(second['draft']['export_copy'],{'enabled':True,'copied':1,'failed':0,'error':None})
+            self.service.render(self.identity,target='main')
+            self.assertEqual(len(list(directory.glob('*.png'))),2)
+
+    def test_copy_failure_keeps_export_available_and_retry_clears_error(self):
+        self.service.settings=Settings(self.root)
+        self.service.settings.update({'export':{'copy_directory':str(self.root/'copies')}})
+        with patch('discord_archive.editorial.shutil.which',return_value='/fixture/node'), \
+                patch('discord_archive.editorial.subprocess.run',side_effect=self.render) as runner:
+            with patch('discord_archive.editorial.copy_export',side_effect=ValueError('磁盘已满')):
+                failed=self.service.render(self.identity,target='main')
+            self.assertTrue(failed['images'])
+            self.assertTrue((self.root/unquote(failed['images'][0]).lstrip('/')).is_file())
+            self.assertEqual(failed['draft']['export_copy']['failed'],1)
+            self.assertEqual(self.service.list_draft_page()['items'][0]['export_copy']['error'],'磁盘已满')
+            retry=self.service.render(self.identity,target='main')
+            self.assertEqual(retry['draft']['export_copy']['error'],None)
+            self.assertEqual(retry['draft']['export_copy']['copied'],1)
+            self.assertEqual(runner.call_count,1)
+
+    def test_requested_target_and_density_are_the_only_files_copied(self):
+        self.service.settings=Settings(self.root)
+        self.service.settings.update({'export':{'copy_directory':str(self.root/'copies')}})
+        with patch('discord_archive.editorial.shutil.which',return_value='/fixture/node'), \
+                patch('discord_archive.editorial.subprocess.run',side_effect=self.render), \
+                patch('discord_archive.editorial.copy_export') as copier:
+            self.service.render(self.identity,target='main')
+            copier.reset_mock()
+            result=self.service.render(self.identity,target='mobile',render_scale=2)
+            copier.assert_called_once()
+            self.assertIn('mobile-100',str(copier.call_args.args[0]))
+            self.assertEqual(copier.call_args.kwargs['render_scale'],2)
+            self.assertEqual(result['draft']['export_copy']['copied'],1)
 
     def test_missing_changed_png_or_html_invalidate_cache(self):
         with patch('discord_archive.editorial.shutil.which',return_value='/fixture/node'), \

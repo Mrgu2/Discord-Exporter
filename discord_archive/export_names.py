@@ -13,6 +13,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .scheduler import market_day
+from .settings import normalize_export_preferences
 from .store import parse_time
 
 
@@ -101,13 +102,31 @@ def filename(metadata, sequence, *, render_scale=1, channel_title=None):
         raise ValueError('图片序号须为 1 到 999999 的整数')
     if type(render_scale) is not int or render_scale not in (1,2):
         raise ValueError('导出清晰度须为标准 1× 或 HiDPI 2×')
-    pieces = [PREFIX,export_date_label(metadata)]
+    saved = metadata['export_preferences'] if 'export_preferences' in metadata else metadata.get('export',{})
+    if not isinstance(saved,dict):
+        raise ValueError('导出命名设置须为对象')
+    # Copy destinations are operational settings. A removed drive or a folder
+    # that later becomes a file must not change a historical export's name.
+    preferences = normalize_export_preferences({key:value for key,value in saved.items()
+        if key in ('name_prefix','date_format','sequence_digits','separator')},validate_directory=False)
+    date_label = export_date_label(metadata)
+    if preferences['date_format'] == 'YYYYMMDD':
+        date_label = date_label.replace('-','')
+    pieces = [preferences['name_prefix'],date_label]
     if render_scale == 2:
         pieces.append('HiDPI')
     if channel_title is not None:
         pieces.append(_channel_title(channel_title))
-    pieces.append(f'{sequence:02d}')
-    return '-'.join(pieces)+'.png'
+    pieces.append(f'{sequence:0{preferences["sequence_digits"]}d}')
+    separator = preferences['separator']
+    result = separator.join(pieces)+'.png'
+    # macOS limits each filename component to 255 UTF-8 bytes. A long custom
+    # prefix plus a long channel title can exceed that despite both being valid.
+    if channel_title is not None:
+        while len(result.encode('utf-8')) > 255 and len(pieces[-2]) > 1:
+            pieces[-2] = pieces[-2][:-1].rstrip(' .-_') or '分栏'
+            result = separator.join(pieces)+'.png'
+    return result
 
 
 def _validate_png(path):

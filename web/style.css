@@ -180,6 +180,12 @@ th:first-child { width: 23%; } th:nth-child(2) { width: 17%; } th:nth-child(3) {
 .settings-fields { min-width: 0; }
 .settings-fields > .field:first-child { margin-top: 0; }
 .settings-save { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 20px 0; }
+.export-name-preview { display: block; color: var(--muted); font-size: 13px; line-height: 1.8; overflow-wrap: anywhere; }
+.export-directory-row { display: flex; align-items: center; gap: 8px; }
+.export-directory-row input { min-width: 0; flex: 1; }
+.export-directory-row .button { flex-shrink: 0; }
+.export-directory-row input[readonly] { color: var(--muted); }
+.export-copy-error { border: 0; padding: 0; background: none; font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .toggle-row { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 16px; font-size: 14px; color: var(--ink); cursor: pointer; min-height: 40px; }
 .toggle-row input { position: absolute; right: 0; opacity: 0; width: 36px; height: 40px; margin: 0; }
 .switch { width: 34px; height: 20px; background: #bec9da; border-radius: 999px; position: relative; transition: background .2s; flex-shrink: 0; }

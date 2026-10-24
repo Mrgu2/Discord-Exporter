@@ -6,6 +6,7 @@ import re
 import secrets
 import subprocess
 import threading
+import unicodedata
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -19,6 +20,8 @@ DEFAULT_CONFIG = {
     'model': {'enabled': False, 'base_url': '', 'model': ''},
     'download_media': True,
     'speech': {'enabled': True, 'language': 'zh', 'model_path': '', 'python': ''},
+    'export': {'name_prefix': '答疑存档', 'date_format': 'YYYY-MM-DD',
+        'sequence_digits': 2, 'separator': '-', 'copy_directory': ''},
 }
 
 
@@ -40,6 +43,49 @@ def message_location(value):
     return found.groups() if found else None
 
 
+def normalize_export_preferences(value=None, *, validate_directory=True):
+    """Validate export options without creating directories or moving files."""
+    if value is None:
+        value = {}
+    if not isinstance(value,dict):
+        raise ValueError('导出设置须为对象')
+    result = {key:value.get(key,default) for key,default in DEFAULT_CONFIG['export'].items()}
+    prefix = result['name_prefix']
+    if (not isinstance(prefix,str) or any(unicodedata.category(character).startswith('C') for character in prefix)
+            or re.search(r'[/\\:<>"|?*]',prefix)):
+        raise ValueError('文件名前缀不能包含路径或控制字符')
+    prefix = unicodedata.normalize('NFC',prefix).strip()
+    if not prefix or len(prefix) > 40:
+        raise ValueError('文件名前缀须为 1 到 40 个字符')
+    result['name_prefix'] = prefix
+    if result['date_format'] not in ('YYYY-MM-DD','YYYYMMDD'):
+        raise ValueError('日期格式须为 YYYY-MM-DD 或 YYYYMMDD')
+    if type(result['sequence_digits']) is not int or result['sequence_digits'] not in (2,3,4):
+        raise ValueError('序号位数须为 2、3 或 4')
+    if result['separator'] not in ('-','_'):
+        raise ValueError('文件名分隔符须为 - 或 _')
+    directory = result['copy_directory']
+    if not isinstance(directory,str) or any(unicodedata.category(character).startswith('C') for character in directory):
+        raise ValueError('导出目录须为不含控制字符的路径')
+    directory = directory.strip()
+    if directory:
+        try:
+            path = Path(directory).expanduser()
+        except (RuntimeError,ValueError) as exc:
+            raise ValueError('无法展开导出目录，请填写本机绝对路径') from exc
+        if not path.is_absolute():
+            raise ValueError('导出目录须为本机绝对路径或以 ~ 开头的路径')
+        if validate_directory:
+            try:
+                if (path.exists() or path.is_symlink()) and not path.is_dir():
+                    raise ValueError('导出目录不能指向现有文件')
+            except OSError as exc:
+                raise ValueError('无法检查导出目录，请检查本机路径权限') from exc
+        directory = str(path)
+    result['copy_directory'] = directory
+    return result
+
+
 class Settings:
     def __init__(self, root):
         self.root, self.lock = Path(root), threading.RLock()
@@ -49,17 +95,32 @@ class Settings:
 
     def read(self):
         with self.lock:
-            return json.loads(self.path.read_text())
+            value = json.loads(self.path.read_text())
+            if not isinstance(value,dict):
+                raise ValueError('配置文件须为对象')
+            saved_export = value.get('export',{})
+            if not isinstance(saved_export,dict):
+                raise ValueError('导出设置须为对象')
+            value['export'] = normalize_export_preferences(saved_export,validate_directory=False)
+            return value
 
     def update(self, incoming):
         with self.lock:
+            if not isinstance(incoming,dict):
+                raise ValueError('设置须为对象')
             value = self.read()
             old_link = value.get('target_message_url', '')
             old_author = str(value.get('target_author_id') or '')
             allowed = set(DEFAULT_CONFIG)
             for key, content in incoming.items():
                 if key in allowed:
-                    value[key] = content
+                    if key == 'export':
+                        if not isinstance(content,dict):
+                            raise ValueError('导出设置须为对象')
+                        value[key] = {**value['export'],**content}
+                    else:
+                        value[key] = content
+            value['export'] = normalize_export_preferences(value['export'])
             if (incoming.get('target_message_url')
                     and incoming['target_message_url'] != old_link
                     and str(incoming.get('target_author_id') or old_author) == old_author):

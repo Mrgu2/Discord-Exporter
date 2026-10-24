@@ -196,6 +196,8 @@ def verify():
             require(b'archive-key' in page and b'connect-browser-button' in page,"Copied web UI or connection entry did not load")
             json_request("/api/config","PUT",{
                 "channels":CHANNELS,"target_author_id":OWNER,"target_message_url":"",
+                "export":{"name_prefix":"验收示例","date_format":"YYYYMMDD","sequence_digits":3,
+                    "separator":"_","copy_directory":str(root/'chosen-exports')},
                 "download_media":False,"schedule":{"enabled":True,"interval_minutes":360,"times":[],"timezone":"America/New_York","window":{"enabled":False,"start":"15:50","end":"16:10","every_minutes":5,"weekdays":[0,1,2,3,4]}}})
             # Exercise the real clock -> due -> queue -> capture path on first
             # startup, without changing the system clock or the user's config.
@@ -263,6 +265,25 @@ def verify():
                 require((image in rendered['images'] and width==8472 and height<=64000 and width*height<=320_000_000)
                     or (image not in rendered['images'] and width==2160 and height<=7200),"Rendered image exceeded the output dimensions")
                 dimensions.append({"width":width,"height":height})
+                name=Path(unquote(image)).name
+                require(name.startswith('验收示例_20261021_HiDPI_') and name.endswith('_001.png'),
+                    'Custom filename settings were not applied to the native export')
+                require((root/'chosen-exports'/name).read_bytes()==png,'Automatic export copy changed image bytes')
+            require(rendered['draft']['export_copy']=={'enabled':True,'copied':len(all_images),'failed':0,'error':None},
+                'Export copy summary did not match the verified files')
+            require('copy_directory' not in rendered['draft']['export_preferences'],'Operational directory leaked into naming snapshot')
+            old_image=rendered['images'][0]
+            old_bytes,_=request(old_image)
+            json_request('/api/config','PUT',{'export':{'name_prefix':'二次改名'}})
+            json_request('/api/render','POST',{'draft_id':draft['id'],'target':'main','render_scale':2},expected=202)
+            renamed=wait_for_job(lambda result:bool(result.get('images'))
+                and Path(unquote(result['images'][0])).name.startswith('二次改名_'))
+            require(app.worker.status()[0]['last_result'].get('cache_hits')==['main'],
+                'Changing naming preferences unnecessarily rerendered the image')
+            new_bytes,_=request(renamed['images'][0]);original_bytes,_=request(old_image)
+            require(new_bytes==original_bytes==old_bytes,'Renaming changed source bytes or broke historical links')
+            require((root/'chosen-exports'/Path(unquote(renamed['images'][0])).name).read_bytes()==old_bytes,
+                'Cached exports did not use the new copy preferences')
 
             json_request("/api/status",phone=True,expected=401)
             request(rendered["images"][0],phone=True,expected=401)
@@ -273,6 +294,11 @@ def verify():
             require("access_code" not in phone_status["remote"],"The phone API exposed the pairing code")
             request(rendered["images"][0],phone=True,cookie=cookie)
             json_request("/api/connect-browser","POST",{},phone=True,cookie=cookie,expected=403)
+            json_request('/api/export-directory','POST',{'action':'choose'},phone=True,cookie=cookie,expected=403)
+            json_request('/api/config','PUT',{'export':{'copy_directory':''}},phone=True,cookie=cookie,expected=403)
+            changed,_=json_request('/api/config','PUT',{'export':{'sequence_digits':4}},phone=True,cookie=cookie)
+            require(changed['export']['copy_directory']==str(root/'chosen-exports') and changed['export']['sequence_digits']==4,
+                'Phone naming changes did not preserve the Mac directory')
             require(Path(app.store.db_path).is_relative_to(root) and app.worker.root == root and app.settings.root == root,"A persistent component used the user's workspace data")
 
             # No manual retry or clock acceleration: the real worker records
@@ -304,6 +330,8 @@ def verify():
                 "mobile_image_count":len(all_images)-len(rendered["images"]),"image_dimensions":dimensions,
                 "stacked_bands":bands,
                 "phone_auth":{"unauthenticated":401,"paired":200,"remote_browser_connect":403},
+                "export_settings":{"custom_names":True,"byte_identical_copies":len(all_images),
+                    "cached_rename":True,"old_links_preserved":True,"phone_directory_boundary":True},
                 "schedule_and_recovery":{"scheduled_channels":5,"manual_capture":True,"failed_api_attempts":transport.failed_calls,
                     "failed_cursor_unchanged":True,"persisted_retry":True,"automatic_reconnect_channels":5,"manual_retry":False,"wait_seconds":recovery_wait,"same_worker_thread":True},
                 "isolated_data":True,"elapsed_seconds":round(time.monotonic()-began,2)}

@@ -9,7 +9,45 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from discord_archive.settings import Credentials, Settings, atomic_json
+from discord_archive.settings import Credentials, Settings, atomic_json, DEFAULT_CONFIG, normalize_export_preferences
+
+
+class ExportSettingsTests(unittest.TestCase):
+    def test_legacy_read_merges_defaults_without_rewriting_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            settings=Settings(directory)
+            atomic_json(settings.path,{'channels':[],'export':{'separator':'_'}})
+            before=settings.path.read_bytes()
+            self.assertEqual(settings.read()['export'],{**DEFAULT_CONFIG['export'],'separator':'_'})
+            self.assertEqual(settings.path.read_bytes(),before)
+
+    def test_partial_updates_preserve_directory_and_other_preferences_without_creating_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            settings=Settings(directory);target=Path(directory)/'not-yet-created'
+            settings.update({'export':{'copy_directory':str(target),'date_format':'YYYYMMDD'}})
+            updated=settings.update({'export':{'name_prefix':'新前缀','sequence_digits':3}})['export']
+            self.assertEqual(updated['copy_directory'],str(target))
+            self.assertEqual(updated['date_format'],'YYYYMMDD')
+            self.assertEqual(updated['sequence_digits'],3)
+            self.assertFalse(target.exists())
+            self.assertEqual(settings.path.stat().st_mode & 0o777,0o600)
+
+    def test_invalid_export_options_do_not_overwrite_previous_settings(self):
+        with tempfile.TemporaryDirectory() as directory:
+            settings=Settings(directory);before=settings.path.read_bytes()
+            for value in ([],{'name_prefix':'../bad'},{'name_prefix':' '},{'name_prefix':'x'*41},
+                    {'name_prefix':'bad\u202ename'},{'date_format':'YY'},{'sequence_digits':True},
+                    {'sequence_digits':1},{'separator':'/'},{'copy_directory':'relative/path'},
+                    {'copy_directory':'/tmp/a\npath'},{'copy_directory':42}):
+                with self.subTest(value=value),self.assertRaises(ValueError):settings.update({'export':value})
+                self.assertEqual(settings.path.read_bytes(),before)
+            self.assertEqual(normalize_export_preferences({'name_prefix':'  本地整理  '})['name_prefix'],'本地整理')
+            with self.assertRaises(ValueError):normalize_export_preferences({'copy_directory':str(settings.path)})
+
+    def test_read_reports_invalid_export_structure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            settings=Settings(directory);atomic_json(settings.path,{'export':[]})
+            with self.assertRaisesRegex(ValueError,'导出设置须为对象'):settings.read()
 
 
 class CredentialRecoveryTests(unittest.TestCase):

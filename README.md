@@ -2,6 +2,8 @@
 
 保存自己有权访问的 Discord 频道，围绕指定答疑人整理文字稿和长图。可以在 Mac 本地运行，也可以部署到 Ubuntu，通过私网工作台操作。
 
+开始使用：[获取安装包](docs/DOWNLOADS.md) · [Mac 本地安装](docs/MAC.md) · [Ubuntu 部署](docs/LINUX_SETUP.md)
+
 ## 主要功能
 
 - **保存消息与附件**：保留原文，后续增量更新。
@@ -13,18 +15,6 @@
 
 消息、稿件和配置保存在实际运行应用的机器上；Mac 与 Ubuntu 的资料不自动同步。**推送默认关闭**，启用后会将生成的图片发送到你配置的收件邮箱或聊天平台。只保存自己有权查看的频道；账号自动读取仍受 Discord 平台规则约束。
 
-## 效果预览
-
-以下使用虚构频道和消息演示。点击图片可查看原图。
-
-**工作台**
-
-[![工作台示例：频道选择、保存与出稿操作，以及最近生成的稿件](docs/images/workspace.png)](docs/images/workspace.png)
-
-**导出长图**
-
-[![导出长图示例：白底黑字的栏目内容与答疑分区](docs/images/export-example.png)](docs/images/export-example.png)
-
 <details>
 <summary>安装与使用教程（Mac / Ubuntu / 手机访问）</summary>
 
@@ -34,11 +24,13 @@
 
 | 使用场景 | 下载文件 | 教程 |
 | --- | --- | --- |
-| Mac 本地运行 | `DiscordArchive-source.zip` | [Mac 安装与登录](docs/MAC.md) |
-| 首次部署 Ubuntu | `DiscordArchive-source.zip`；连接时另需下面对应的访问客户端 | [Ubuntu 安装与首次连接](docs/LINUX_SETUP.md) |
-| Mac 访问已有 Ubuntu | `login-assistant-mac.zip`（Mac 访问客户端） | [访问已有 Ubuntu](docs/ACCESS.md) |
-| Windows 访问已有 Ubuntu | `login-assistant-windows.zip`（Windows 访问客户端） | [访问已有 Ubuntu](docs/ACCESS.md) |
+| Mac 本地运行 | [DiscordArchive-source.zip](docs/DOWNLOADS.md#完整项目) | [Mac 安装与登录](docs/MAC.md) |
+| 首次部署 Ubuntu | [DiscordArchive-source.zip](docs/DOWNLOADS.md#完整项目)；连接时另需下面对应的访问客户端 | [Ubuntu 安装与首次连接](docs/LINUX_SETUP.md) |
+| Mac 访问已有 Ubuntu（Apple Silicon / M 系列） | [login-assistant-mac.zip](docs/DOWNLOADS.md#mac-访问客户端)（arm64） | [访问已有 Ubuntu](docs/ACCESS.md) |
+| Windows 访问已有 Ubuntu | [login-assistant-windows.zip](docs/DOWNLOADS.md#windows-访问客户端)（x64） | [访问已有 Ubuntu](docs/ACCESS.md) |
 | 手机访问已有工作台 | 无需下载项目；手机安装 Tailscale | [手机访问](docs/ACCESS.md#手机访问与-tailscale-ip) |
+
+现有 Mac 访问客户端适用于 Apple Silicon（M 系列），Intel Mac 不要使用此客户端包；完整项目的基础功能与语音支持见 [Mac 教程](docs/MAC.md)。
 
 **Mac 本地直接登录，不需要扩展。Ubuntu 首次连接或重连时才用扩展；访问已连接的 Ubuntu 不重复绑定。** 访问 Ubuntu 的电脑不用安装完整项目或语音模型，图片推送在 Ubuntu 工作台里配置。
 
@@ -49,6 +41,20 @@
 已有安装更新前，先看 [保留资料更新的方法](docs/DELIVERY.md#已有安装如何更新)。旧分发包不会随当前源码自动更新；应使用包含新功能的完整源码或重新构建的分发包。
 
 </details>
+
+## 效果预览
+
+以下使用虚构频道和消息演示。缩略图用于查看布局；阅读文字请打开原图。
+
+**工作台**
+
+[![工作台示例：频道选择、保存与出稿操作，以及最近生成的稿件](docs/images/workspace.png)](docs/images/workspace.png)
+
+**导出长图** · [打开清晰原图（手机可缩放查看）](docs/images/export-example.png)
+
+[![导出长图示例：白底黑字的栏目内容与答疑分区](docs/images/export-example.png)](docs/images/export-example.png)
+
+
 
 <details>
 <summary>维护、排错与验收记录</summary>

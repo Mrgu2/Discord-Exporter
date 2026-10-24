@@ -8,7 +8,7 @@
 
 已有服务正常时，快捷入口直接打开页面。服务尚未就绪时等待健康检查；匹配的 LaunchAgent 未运行时尝试启动，不执行重启或停止。没有匹配的后台服务时，用本机 Python 启动独立后台进程；退出 App 和浏览器不关闭采集服务。这个备用启动不自动安装开机服务，需要登录后自启动时再按 README 的 LaunchAgent 步骤安装。
 
-已有进程占用端口、资料库仍被服务锁定或启动超过 30 秒时，会显示错误并保留原进程。检查 `data/service.log` 或备用启动的 `data/launcher.log`。快捷入口不会改写后台服务配置、终止正在采集或出图的任务，也不修改睡眠设置。
+其他程序占用请求端口时会自动尝试空闲端口，并使用实际地址；同一资料库已被服务锁定时等待现有服务就绪，不另开实例。超过等待时限会显示错误并保留原进程。检查 `data/service.log` 或备用启动的 `data/launcher.log`。快捷入口不会改写后台服务配置、终止正在采集或出图的任务，也不修改睡眠设置。
 
 ## 在另一台 Mac 使用
 
@@ -31,17 +31,21 @@ App 使用本地临时签名，没有 Developer ID 公证；另一台 Mac 可能
 
 ## 修正版交付目录与文件位置
 
+当前完整交付目录为 `dist/releases/2026-10-25-readme-ready/`；接收方先双击 `START-HERE.html`，其中的 ZIP 链接指向同目录文件。获取方式与客户端架构见 [获取安装包](DOWNLOADS.md)。
+
 当前修正版及验收边界见 [当前修正版验收](FINAL_PACKAGE_ACCEPTANCE.md)，不同使用方式拿哪些 ZIP 见 [README 文件选择](../README.md#需要拿哪些文件)。
 
 本项目生成文件统一留在工作目录内：构建中间文件放 `dist/builds/`，干净的交付文件放 `dist/releases/`，验收截图、JSON、样例和报告放 `artifacts/`，可复用说明放 `docs/`。不额外向下载目录导出源码包、客户端包或测试目录。只有本人需要手动加载/更新浏览器扩展时，才导出对应 `Browser Extension` 到下载目录的固定文件夹；不移动浏览器仍在加载的扩展目录。
 
-交付目录只提供：
+交付目录提供：
 
 - `DiscordArchive-source.zip`：Mac 本地完整安装或 Ubuntu 服务端安装；内含 Mac 连接包。
 - `login-assistant-mac.zip`：Apple Silicon Mac 访问 Ubuntu 时单独使用。
 - `login-assistant-windows.zip`：Windows x64 访问 Ubuntu 时单独使用，尚待实机验收。
 - `CHECKSUMS.sha256`：上面三个原始 ZIP 的哈希。
 - `FILES.txt`：简明的平台与文件对应关系。
+- `START-HERE.html`：离线可打开的选包页面，含三个 ZIP 的直接链接。
+- `ACCEPTANCE.md`：该版本的验收范围与限制。
 
 下载接收方核对方式：Mac 在交付目录执行 `shasum -a 256 -c CHECKSUMS.sha256`；Ubuntu 执行 `sha256sum -c CHECKSUMS.sha256`。工作台下载包附加当前地址信息，字节与交付原始包不同，不用这个清单校验工作台专用包，也不要把专用包拿回服务器发布。
 

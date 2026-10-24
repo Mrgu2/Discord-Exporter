@@ -2,7 +2,7 @@
 
 服务器已连接 Discord 时，换电脑不用重新绑定，也不需要安装完整项目。
 
-准备对应文件：Mac 用 `login-assistant-mac.zip`，Windows 用 `login-assistant-windows.zip`。
+先按 [获取安装包](DOWNLOADS.md)准备文件：Apple Silicon（M 系列，arm64）Mac 用 `login-assistant-mac.zip`；该客户端不适用于 Intel Mac。Windows x64 用 `login-assistant-windows.zip`（尚待实机验收）。
 
 1. 在新电脑安装并登录自己的 Tailscale，使用服务器获准的同一身份。
 2. 完整解压对应访问客户端，Mac 双击 **Ubuntu Workspace.app**，Windows 双击 **Ubuntu Workspace.exe**。需要已安装 Chrome 或 Edge。

@@ -6,13 +6,32 @@
 - `login-assistant-mac.zip`：Apple Silicon Mac 连接工具与访问客户端，包含首次连接组件。
 - `login-assistant-windows.zip`：Windows x64 连接工具与访问客户端（尚待实机验收）。只需准备实际使用的平台包；两平台都用时才准备两个。
 
-可先通过 SSH/SFTP 上传源码 ZIP 和对应平台的连接包 ZIP 到服务器用户主目录；不需要在客户端安装完整项目。SSH 只用于服务器首次部署和维护，日常不用建立隧道。命令中的用户名、地址、端口和本地路径须替换；`scp` 的端口参数是大写 `-P`，`ssh` 为小写 `-p`。
+## 先从访问电脑上传文件
+
+先按 [获取安装包](DOWNLOADS.md)取得完整分发目录。下面前三条命令在**访问电脑**的终端执行（Mac 终端或 Windows PowerShell），不是在服务器执行。
+
+将路径、`ubuntu_user`、`server_host` 和端口 `22` 换成自己的实际值；用户名是普通 Ubuntu SSH 账号。首次连接先通过可信途径核对服务器主机指纹。密码由 SSH 本人输入，不写进命令：
+
+```sh
+cd "分发文件夹的实际路径"
+scp -P 22 "./DiscordArchive-source.zip" "ubuntu_user@server_host:~/"
+ssh -p 22 ubuntu_user@server_host
+```
+
+`scp` 的端口参数是大写 `-P`，`ssh` 是小写 `-p`。Mac 客户端 ZIP 已内嵌在源码中，不必另外上传；**本地仍保留单独客户端 ZIP**，后面解压并连接工作台。只有使用 Windows 访问时，还需在访问电脑另开终端，从同一分发目录上传：
+
+```sh
+scp -P 22 "./login-assistant-windows.zip" "ubuntu_user@server_host:~/"
+```
+
+支持 SFTP 的 SSH 工具也可以将相同文件上传到服务器用户主目录。日常访问不需要手动建 SSH 隧道，SSH 留作首次部署和维护。
 
 ## 安装环境与后台服务
 
-**在 Ubuntu 的 SSH 终端执行：**首次连接先通过可信途径核对服务器主机指纹。
+**以下命令均在已经登录 Ubuntu 的 SSH 终端执行。** 先检查上传文件存在；若 ls 提示不存在，回到上节核对上传目标，不继续解压。
 
 ```sh
+ls -lh ~/DiscordArchive-source.zip
 python3 --version
 df -h /
 sudo apt-get update
@@ -28,10 +47,10 @@ Python 应为 3.10+。看到“**Linux 环境检查通过**”后继续：
 ```sh
 sudo loginctl enable-linger "$USER"
 python3 scripts/install_linux_service.py --install --no-autostart
-python3 scripts/install_login_assistants.py --mac-zip ~/login-assistant-mac.zip
+python3 scripts/install_login_assistants.py --mac-zip helpers/login-assistant-mac.zip
 ```
 
-Mac 包已经内嵌在源码 ZIP 中：只上传源码时，可改用 `--mac-zip helpers/login-assistant-mac.zip` 发布；访问电脑仍拿单独 Mac ZIP，先由客户端打开工作台。上例发布 Mac 包；只用 Windows 时改为 `--windows-zip ~/login-assistant-windows.zip`，两者都用时同时传两个参数。发布器会拒绝缺少首次连接组件或协议版本不匹配的旧访问包。
+上例直接发布源码内嵌的 Apple Silicon Mac 包；只用 Windows 时改为 `--windows-zip ~/login-assistant-windows.zip`，两者都用时同时传两个参数。发布器会拒绝缺少首次连接组件或协议版本不匹配的旧访问包。
 
 确认 `ActiveState=active`、非零 `MainPID`。linger 让服务退出 SSH 后继续运行；`--no-autostart` 不开启下次开机自启动，以后在设置中自行选择。助手包先校验再发布，替换旧包时保留备份；不包含任何账号或模型。
 

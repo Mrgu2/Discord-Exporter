@@ -13,3 +13,9 @@
 工作台地址也可收藏在普通浏览器；系统代理有冲突时用轻客户端的专用直连窗口，不修改全局代理。约 3 MB 的客户端不需要项目运行环境或模型。当前 Mac 包为 Apple Silicon，Windows x64 尚待实机验收；Mac 仅本地签名，未 Developer ID 公证，首次只对可信包按系统提示允许打开。
 
 需要恢复已停止的服务器服务，见 [日常管理](OPERATIONS.md#以后如何打开)。
+
+## 手机访问与 Tailscale IP
+
+手机安装 Tailscale，登录获准的账号并保持连接，然后在浏览器打开 Ubuntu 的 HTTPS 工作台地址，无需安装项目或模型。Ubuntu 默认只监听本机，请使用 HTTPS 域名；Tailscale IP 可以用于 SSH，但直接打开 `http://100.x.x.x:8765` 不适用于该部署。
+
+如果项目运行在 Mac，且开启局域网监听，手机连接同一 Tailscale 私网后，也可以打开 `http://Mac的Tailscale-IP:实际端口`。IP 可在 Tailscale 设备列表查看，端口以工作台启动提示为准；首次访问按页面完成配对，不开放公网端口。

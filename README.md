@@ -13,46 +13,45 @@
 
 消息、稿件和配置保存在实际运行应用的机器上；Mac 与 Ubuntu 的资料不自动同步。**推送默认关闭**，启用后会将生成的图片发送到你配置的收件邮箱或聊天平台。只保存自己有权查看的频道；账号自动读取仍受 Discord 平台规则约束。
 
-## 从这里开始
+## 效果预览
 
-| 我要做什么 | 打开教程 |
-| --- | --- |
-| 在 Mac 本地安装、登录 Discord | [Mac 安装与登录](docs/MAC.md) |
-| 第一次部署 Ubuntu 服务器 | [Ubuntu 安装与首次连接](docs/LINUX_SETUP.md) |
-| 换一台电脑访问已有 Ubuntu | [访问已有 Ubuntu](docs/ACCESS.md) |
-| 第一次保存消息、生成并下载长图 | [首次使用](docs/USAGE.md#第一次采集出图) |
-| 每天自动出图，并在邮箱或聊天软件收图 | [图片推送配置](docs/DELIVERY.md) |
-| 配置本地语音转写 | [语音配置](docs/USAGE.md#语音转写可选) |
+以下使用虚构频道和消息演示。点击图片可查看原图。
 
-**Mac 本地直接登录，不需要扩展。Ubuntu 首次连接或重连时才用扩展；访问已连接的 Ubuntu 不重复绑定。**
+**工作台**
 
-首次使用先用一个小频道完成“保存一次 → 生成稿件 → 生成图片 → 下载打开”的验证。首次保存会读取该频道完整可见历史，稿件的日期筛选不限制采集量。
+[![工作台示例：频道选择、保存与出稿操作，以及最近生成的稿件](docs/images/workspace.png)](docs/images/workspace.png)
 
-### 想让服务器每天把图片发给我
+**导出长图**
 
-先完成一次手动出图，然后：
+[![导出长图示例：白底黑字的栏目内容与答疑分区](docs/images/export-example.png)](docs/images/export-example.png)
 
-1. 在 **高级设置 → 自动推送** 配置一个渠道，点“保存并测试”，在收件端确认收到测试附件。
-2. 打开该渠道的推送开关，点 **保存推送设置**。扫码绑定或测试成功不会自动开启推送。
-3. 在 **定时出稿** 中设置执行日、纽约时间、版式与清晰度，打开开关，点 **保存设置**。
-4. 如果 **服务控制** 显示“自动任务已暂停”，点 **恢复自动任务**。核对“下次出稿”，并在第一次计划执行后确认真实图片收到。
+<details>
+<summary>安装与使用教程（Mac / Ubuntu / 手机访问）</summary>
 
-只用远程推送时可以不填自动另存目录，原图仍保存在应用的 `output/` 中。服务器须保持运行、联网；Mac 不能在睡眠期间定时出图。完整步骤、各渠道准备条件和失败恢复见 [图片推送教程](docs/DELIVERY.md)。
-
-## 准备哪些文件
+## 选择使用方式
 
 <a id="需要拿哪些文件"></a>
 
-| 用途 | 所需文件 |
-| --- | --- |
-| Mac 本地完整安装 | `DiscordArchive-source.zip` |
-| Ubuntu 服务端安装 | `DiscordArchive-source.zip`，以及访问电脑对应的客户端包 |
-| Mac 访问 Ubuntu | `login-assistant-mac.zip` |
-| Windows 访问 Ubuntu | `login-assistant-windows.zip` |
+| 使用场景 | 下载文件 | 教程 |
+| --- | --- | --- |
+| Mac 本地运行 | `DiscordArchive-source.zip` | [Mac 安装与登录](docs/MAC.md) |
+| 首次部署 Ubuntu | `DiscordArchive-source.zip`；连接时另需下面对应的访问客户端 | [Ubuntu 安装与首次连接](docs/LINUX_SETUP.md) |
+| Mac 访问已有 Ubuntu | `login-assistant-mac.zip`（Mac 访问客户端） | [访问已有 Ubuntu](docs/ACCESS.md) |
+| Windows 访问已有 Ubuntu | `login-assistant-windows.zip`（Windows 访问客户端） | [访问已有 Ubuntu](docs/ACCESS.md) |
+| 手机访问已有工作台 | 无需下载项目；手机安装 Tailscale | [手机访问](docs/ACCESS.md#手机访问与-tailscale-ip) |
 
-仅访问 Ubuntu 的电脑不需要安装完整项目或语音模型。推送凭据也要配置在**实际出图的那台机器**上，不能把 Mac 本机测试成功当作 Ubuntu 已配置成功。
+**Mac 本地直接登录，不需要扩展。Ubuntu 首次连接或重连时才用扩展；访问已连接的 Ubuntu 不重复绑定。** 访问 Ubuntu 的电脑不用安装完整项目或语音模型，图片推送在 Ubuntu 工作台里配置。
+
+**首次保存会读取所选频道完整可见历史，选择稿件日期不会限制采集量。** 请先用一个消息少的频道，按 [首次使用教程](docs/USAGE.md#第一次采集出图)完成保存、出稿和下载。
+
+后续按需配置：[每天自动出图与推送](docs/DELIVERY.md) · [本地语音转写](docs/USAGE.md#语音转写可选)。
 
 已有安装更新前，先看 [保留资料更新的方法](docs/DELIVERY.md#已有安装如何更新)。旧分发包不会随当前源码自动更新；应使用包含新功能的完整源码或重新构建的分发包。
+
+</details>
+
+<details>
+<summary>维护、排错与验收记录</summary>
 
 ## 维护与排错
 
@@ -60,7 +59,10 @@
 - [常见问题](docs/TROUBLESHOOTING.md)
 - [Linux 维护、备用登录和 GPU 配置](docs/LINUX.md)
 - [分发包构建与文件位置](docs/PACKAGING.md)
+- [本轮可操作性与恢复验收](docs/RECOVERY_PORTS_ACCEPTANCE.md)
 - [版本验证与平台限制](docs/FINAL_PACKAGE_ACCEPTANCE.md)
 - [GitHub 上传与隐私检查](docs/GITHUB_PRIVACY.md)
 
 基础采集与出图已在 Apple Silicon Mac、Ubuntu 22.04 x86_64 实测。新增四个推送渠道目前完成的是 **Mac 本机真实收件验收**，不代表 Ubuntu 已完成同一轮渠道测试；微信 ClawBot 也有会话有效期限制。详见 [推送验收范围](docs/DELIVERY.md#当前验收范围)。Windows 访问客户端已构建，尚待实机验证。
+
+</details>

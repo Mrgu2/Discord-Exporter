@@ -109,7 +109,9 @@ def main():
         from discord_archive.access import linux_access
         access=linux_access()
         print('服务器私有 IP（用于 SSH）：'+('、'.join(access['server_addresses']) or '未检测到，请执行 ip -4 address 核对'))
-        print('工作台仅监听 127.0.0.1:8765；不能直接用服务器 IP:8765 打开。')
+        from discord_archive.listener import read_listener
+        backend=read_listener(root).get('url', '尚未就绪，请查看 data/service.log')
+        print('工作台本机地址：'+backend+'；请使用 Tailscale HTTPS 访问，勿直接使用服务器 IP 加端口。')
         print('下一步：按 README 配置 Tailscale HTTPS；以后打开固定私网 HTTPS 地址，使用代理时先打开随包访问客户端。')
         print('SSH 隧道 http://127.0.0.1:18765 只作备用，不是默认日常步骤。')
         print('访问步骤见 docs/LINUX.md；不开放公网端口，不使用 Tailscale Funnel。')

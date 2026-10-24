@@ -302,3 +302,5 @@ th:first-child { width: 23%; } th:nth-child(2) { width: 17%; } th:nth-child(3) {
 [data-delivery-channel] > .settings-fields { padding-bottom: 12px; }
 
 #clawbot-qr { display: block; max-width: 100%; height: auto; background: white; margin-top: 12px; }
+
+#delivery-history { max-height: 360px; overflow-y: auto; overscroll-behavior: contain; }

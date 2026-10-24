@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import fcntl
+import hashlib
 import json
 import os
 import plistlib
@@ -20,6 +21,19 @@ from pathlib import Path
 
 LABEL = "local.discord.answer-archive"
 URL = "http://127.0.0.1:8765"
+ACTIVE_ROOT = None
+
+def refresh_url():
+    global URL
+    if ACTIVE_ROOT is None:
+        return
+    try:
+        value = json.loads((ACTIVE_ROOT / "data/listener.json").read_text())
+        identity = hashlib.sha256(str(ACTIVE_ROOT.resolve()).encode()).hexdigest()
+        if value.get("project_id") == identity and type(value.get("port")) is int and 1 <= value["port"] <= 65535:
+            URL = f'http://127.0.0.1:{value["port"]}'
+    except (OSError, ValueError, TypeError, AttributeError):
+        pass
 
 
 def project_root(app_path: Path | None = None, root: Path | None = None) -> Path:
@@ -43,17 +57,25 @@ def project_root(app_path: Path | None = None, root: Path | None = None) -> Path
 
 def health() -> str:
     """Return healthy/offline/occupied; never follow environment HTTP proxies."""
+    refresh_url()
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     try:
         with opener.open(URL + "/api/health", timeout=1) as response:
             payload = json.loads(response.read(4096))
-        return "healthy" if payload == {"ok": True, "service": "answer-archive"} else "occupied"
+        if payload != {"ok": True, "service": "answer-archive"}:
+            return "occupied"
+        if ACTIVE_ROOT is not None:
+            with opener.open(URL + "/api/status", timeout=2) as response:
+                identity = json.loads(response.read(8 * 1024 * 1024)).get('system', {}).get('project_id')
+            if identity != hashlib.sha256(str(ACTIVE_ROOT.resolve()).encode()).hexdigest():
+                return "occupied"
+        return "healthy"
     except (urllib.error.HTTPError, ValueError):
         return "occupied"
     except (urllib.error.URLError, TimeoutError, OSError):
         # A bound but stalled process must not be mistaken for a free port.
         try:
-            with socket.create_connection(("127.0.0.1", 8765), timeout=0.3):
+            with socket.create_connection(("127.0.0.1", int(URL.rsplit(":", 1)[1])), timeout=0.3):
                 return "occupied"
         except OSError:
             return "offline"
@@ -106,13 +128,12 @@ def wait_healthy(timeout: float = 30) -> None:
 
 
 def ensure_service(root: Path) -> str:
+    global ACTIVE_ROOT, URL
+    ACTIVE_ROOT = root.resolve()
+    URL = "http://127.0.0.1:8765"
     initial = health()
     if initial == "healthy":
         return "reused"
-    if initial == "occupied":
-        # This includes a slow/hung existing instance. Do not spawn or kill it.
-        wait_healthy()
-        return "waited"
     if archive_locked(root):
         wait_healthy()
         return "waited"
@@ -166,6 +187,8 @@ def main() -> None:
     parser.add_argument("--check", action="store_true", help="只读检查目录和健康状态")
     args = parser.parse_args()
     root = project_root(args.app_path, args.root)
+    global ACTIVE_ROOT
+    ACTIVE_ROOT = root
     if args.check:
         print(json.dumps({"root": str(root), "health": health(), "url": URL}, ensure_ascii=False))
         return

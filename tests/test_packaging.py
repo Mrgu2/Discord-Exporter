@@ -47,8 +47,9 @@ class LauncherTests(unittest.TestCase):
             launchctl.assert_not_called()
             spawn.assert_not_called()
 
-    def test_bound_or_starting_service_only_waits(self):
+    def test_bound_port_with_same_archive_lock_only_waits(self):
         with mock.patch.object(launcher, "health", return_value="occupied"), \
+             mock.patch.object(launcher, "archive_locked", return_value=True), \
              mock.patch.object(launcher, "wait_healthy") as wait, \
              mock.patch.object(launcher, "launchctl") as launchctl, \
              mock.patch.object(launcher.subprocess, "Popen") as spawn:

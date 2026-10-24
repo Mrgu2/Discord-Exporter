@@ -104,14 +104,14 @@ class ExportSlotTests(unittest.TestCase):
 
     def test_no_early_run_and_exact_minute_is_due(self):
         saved = config(weekdays=[4])
-        self.assertIsNone(latest_export_slot(saved, '2026-10-23T20:14:59.999999Z'))
+        self.assertIsNone(latest_export_slot(saved, '2026-10-23T20:14:59.999999Z', not_before='2026-10-23T00:00:00Z'))
         slot = latest_export_slot(saved, '2026-10-23T20:15:00Z')
         self.assertEqual(slot['scheduled_at'], '2026-10-23T20:15:00Z')
 
-    def test_latest_catchup_is_limited_to_48_actual_hours(self):
+    def test_long_outage_catches_only_latest_weekly_slot(self):
         saved = config(weekdays=[4])
         self.assertEqual(latest_export_slot(saved, '2026-10-25T20:15:00Z')['market_date'], '2026-10-23')
-        self.assertIsNone(latest_export_slot(saved, '2026-10-25T20:15:00.000001Z'))
+        self.assertEqual(latest_export_slot(saved, '2026-11-01T20:15:00Z')['market_date'], '2026-10-30')
 
     def test_completed_time_is_exclusive_and_compared_as_actual_instants(self):
         now = '2026-10-23T20:16:00Z'
@@ -132,7 +132,7 @@ class ExportSlotTests(unittest.TestCase):
             not_before='2026-10-23T20:21:00Z'))
 
     def test_weekend_clock_and_next_weekday(self):
-        self.assertIsNone(latest_export_slot(config(), '2026-10-26T19:00:00Z'))
+        self.assertEqual(latest_export_slot(config(), '2026-10-26T19:00:00Z')['market_date'], '2026-10-23')
         self.assertEqual(next_export_at(config(), '2026-10-24T00:00:00Z'), '2026-10-26T20:15:00Z')
         saved = config(weekdays=[6])
         self.assertEqual(latest_export_slot(saved, '2026-10-25T20:16:00Z')['market_date'], '2026-10-25')
@@ -157,11 +157,11 @@ class ExportSlotTests(unittest.TestCase):
 
     def test_spring_nonexistent_wall_time_is_skipped(self):
         saved = config(times=['02:30'], weekdays=[6])
-        self.assertIsNone(latest_export_slot(saved, '2026-03-08T08:00:00Z'))
+        self.assertIsNone(latest_export_slot(saved, '2026-03-08T08:00:00Z', not_before='2026-03-08T00:00:00Z'))
         self.assertEqual(next_export_at(saved, '2026-03-08T05:00:00Z'), '2026-03-15T06:30:00Z')
         # An ordinary valid time on the same transition day still runs.
         saved['auto_export']['times'] = ['02:30', '03:30']
-        self.assertEqual(latest_export_slot(saved, '2026-03-08T08:00:00Z')['scheduled_at'],
+        self.assertEqual(latest_export_slot(saved, '2026-03-08T08:00:00Z', not_before='2026-03-08T00:00:00Z')['scheduled_at'],
             '2026-03-08T07:30:00Z')
 
     def test_fall_ambiguous_wall_time_runs_only_first_occurrence(self):
@@ -176,7 +176,7 @@ class ExportSlotTests(unittest.TestCase):
         saved = config(times=['01:30'], weekdays=[6])
         self.assertEqual(latest_export_slot(saved, '2026-11-03T05:30:00Z')['scheduled_at'],
             '2026-11-01T05:30:00Z')
-        self.assertIsNone(latest_export_slot(saved, '2026-11-03T05:30:00.000001Z'))
+        self.assertEqual(latest_export_slot(saved, '2026-11-03T05:30:00.000001Z')['scheduled_at'], '2026-11-01T05:30:00Z')
 
     def test_next_looks_far_enough_to_cross_a_full_week(self):
         saved = config(weekdays=[0])

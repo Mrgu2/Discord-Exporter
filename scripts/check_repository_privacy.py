@@ -5,6 +5,7 @@ Use with `gitleaks git --log-opts=--all --redact` and manual prose review.
 Only categories and locations are printed; matching content is never printed.
 """
 import re
+import hashlib
 import subprocess
 from pathlib import Path, PurePosixPath
 
@@ -17,6 +18,11 @@ DOC_PATTERNS = {
     'private artifact identifier': re.compile(rb'\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b', re.I),
     'content fingerprint in prose': re.compile(rb'\b[0-9a-f]{64}\b', re.I),
     'personal device record': re.compile(rb'\b(?:iPhone\s+\d{2}|iOS\s+\d{2}\.\d)'),
+}
+# Exact reviewed public fixtures; changed image bytes require a fresh review.
+PUBLIC_BINARY_SHA256 = {
+    'docs/images/workspace.png': '5cc5eb808d6f8e3cba2461c79d4a7ca2d56424ee76ce89e32a905e85c074bb2f',
+    'docs/images/export-example.png': 'c1417cb0a3675f6c24e734c280cea5bf44ab3a5bc6a94bad8040e02785a9cb91',
 }
 PRIVATE_ROOTS = {'data', 'output', 'artifacts', 'dist', '.local', '.runtime', '.venv', 'node_modules', '.ssh'}
 PRIVATE_SUFFIXES = {'.db', '.pem', '.key', '.p12', '.pfx', '.bundle', '.tar', '.zip', '.7z', '.dmg', '.exe', '.crx', '.mobileprovision'}
@@ -36,7 +42,7 @@ def inspect_file(path, content):
             or name in {'credentials.json', 'access-code.txt', 'id_rsa', 'id_ed25519', 'known_hosts', 'Cookies', 'Login Data', 'Local State'}
             or name.startswith(('config.local.', 'settings.local.'))):
         findings.add(('private/generated file', path))
-    if b'\0' in content:
+    if b'\0' in content and PUBLIC_BINARY_SHA256.get(path) != hashlib.sha256(content).hexdigest():
         findings.add(('binary file requires privacy review', path))
     patterns = {**PATTERNS, **(DOC_PATTERNS if path.endswith('.md') else {})}
     for category, pattern in patterns.items():

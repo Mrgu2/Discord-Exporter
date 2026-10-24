@@ -48,19 +48,17 @@ class ScheduledExporter:
             if not self.state['enabled'] or not self.state.get('enabled_since'):
                 self._save(enabled=True,enabled_since=iso_time(now.replace(second=0,microsecond=0)),
                     pending=None,retry_at=None,failures=0,last_error=None)
-            slot = latest_export_slot(config,now,not_before=self.state['enabled_since'],
-                after=self.state.get('last_completed_slot_at'))
             pending = self.state.get('pending') or {}
             retry = parse_time(self.state.get('retry_at'))
-            if slot is None:
-                # Capture catch-up is bounded, but already-saved manuscripts
-                # must still finish after a weekend or an unavailable drive.
-                if pending.get('stage') in ('draft','render') and (retry is None or now >= retry):
+            # Finish durable checkpoints before selecting a newer slot. Otherwise
+            # a long outage can silently abandon capture/render/delivery work.
+            if pending.get('slot'):
+                if retry is None or now >= retry:
                     return copy.deepcopy(pending['slot'])
                 return None
-            previous = parse_time((pending.get('slot') or {}).get('scheduled_at'))
-            newer = previous is not None and parse_time(slot['scheduled_at']) > previous
-            if retry is not None and now < retry and not newer:
+            slot = latest_export_slot(config,now,not_before=self.state['enabled_since'],
+                after=self.state.get('last_completed_slot_at'))
+            if retry is not None and now < retry:
                 return None
             return copy.deepcopy(slot)
 

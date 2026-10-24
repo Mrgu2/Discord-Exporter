@@ -17,6 +17,13 @@ class RepositoryPrivacyTests(unittest.TestCase):
             self.assertTrue(privacy.inspect_file(path, b'example'))
         self.assertFalse(privacy.inspect_file('tests/example.py', b"owner = 'owner@example.com'"))
 
+    def test_public_images_require_exact_reviewed_bytes(self):
+        root = Path(__file__).parents[1]
+        for path in privacy.PUBLIC_BINARY_SHA256:
+            content = (root / path).read_bytes()
+            self.assertFalse(privacy.inspect_file(path, content))
+            self.assertIn(('binary file requires privacy review', path), privacy.inspect_file(path, content + b'changed'))
+
     def test_deleted_history_reused_blob_and_staged_only_data_are_checked(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

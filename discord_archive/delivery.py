@@ -120,6 +120,15 @@ class DeliveryOutbox:
         self.items = json.loads(self.path.read_text()) if self.path.exists() else {}
 
     def _save(self, items):
+        # Bound disposable history only. Pending/failed real deliveries and
+        # source PNGs are never removed by history maintenance.
+        items = dict(items)
+        for test, limit in ((True, 100), (False, 1000)):
+            completed = [key for key, item in items.items()
+                         if bool(item.get('test')) == test and
+                         (item.get('status') == 'sent' or (test and item.get('status') == 'failed'))]
+            for key in completed[:-limit]:
+                items.pop(key)
         atomic_json(self.path, items)
         self.items = items
 
@@ -166,6 +175,9 @@ class DeliveryOutbox:
             items = copy.deepcopy(self.items)
             if key in items:
                 return key
+            if sum(item.get('status') not in ('sent', 'failed') or
+                   (item.get('status') == 'failed' and not item.get('test')) for item in items.values()) >= 1000:
+                raise DeliveryError('待处理推送已达 1000 条，请先处理失败记录；未清理原图或未完成任务')
             items[key] = {'id': key, 'channel': channel, 'options': options,
                 'path': str(path.relative_to(self.root)), 'title': title[:180], 'test': test,
                 'status': 'pending', 'attempts': 0, 'retry_at': utc_now(), 'error': None,

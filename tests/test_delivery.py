@@ -29,6 +29,33 @@ class DeliveryTests(unittest.TestCase):
         self.settings.update({'delivery': {'email': {'host': 'smtp.example.com', 'sender': 'from@example.com',
             'recipients': ['to@example.com']}, 'telegram': {'chat_id': '123456'}, **overrides}})
 
+    def test_terminal_history_is_bounded_without_deleting_images_or_pending_work(self):
+        self.configure()
+        key = self.outbox.enqueue_test('telegram')
+        image = self.root / self.outbox.items[key]['path']
+        rows = {}
+        for test, count in ((True, 140), (False, 1040)):
+            for index in range(count):
+                identity = f'{test}-{index}'
+                rows[identity] = {**self.outbox.items[key], 'id': identity, 'test': test, 'status': 'sent'}
+        rows['unsent'] = {**self.outbox.items[key], 'id': 'unsent', 'test': False}
+        self.outbox._save(rows)
+        restarted = DeliveryOutbox(self.root, self.settings, self.credentials)
+        self.assertEqual(len(restarted.items), 1101)
+        self.assertIn('unsent', restarted.items)
+        self.assertEqual(restarted.due(), None)  # formal channel is disabled
+        self.assertTrue(image.exists())
+        self.assertNotIn('True-0', restarted.items)
+        self.assertIn('False-1039', restarted.items)
+
+    def test_pending_queue_limit_preserves_existing_tasks(self):
+        self.configure()
+        key = self.outbox.enqueue_test('telegram')
+        self.outbox._save({str(i): {**self.outbox.items[key], 'id': str(i)} for i in range(1000)})
+        with self.assertRaisesRegex(DeliveryError, '1000'):
+            self.outbox.enqueue_test('telegram')
+        self.assertEqual(len(self.outbox.items), 1000)
+
     def test_defaults_validation_partial_update_and_separate_secrets(self):
         self.assertFalse(any(x['enabled'] for x in self.settings.read()['delivery'].values()))
         self.configure(telegram={'enabled': True, 'chat_id': '123456'})

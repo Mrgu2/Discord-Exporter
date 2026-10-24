@@ -100,7 +100,7 @@ def _slot_result(config, zone, instant, day, clock):
 
 
 def latest_export_slot(config, now, not_before=None, after=None):
-    """Return only the latest due slot within the preceding 48 actual hours.
+    """Return only the latest due slot within the preceding eight actual days.
 
     ``not_before`` includes its exact instant, while ``after`` excludes it.
     Callers persist ``scheduled_at`` as the completion/deduplication cursor.
@@ -109,7 +109,7 @@ def latest_export_slot(config, now, not_before=None, after=None):
     if not schedule['enabled']:
         return None
     now = _utc(now)
-    earliest = now - timedelta(hours=48)
+    earliest = now - timedelta(days=8)
     if not_before is not None:
         earliest = max(earliest, _utc(not_before))
     completed = _utc(after) if after is not None else None

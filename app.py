@@ -28,7 +28,7 @@ from discord_archive.settings import Credentials, Settings, access_code
 from discord_archive.store import ArchiveStore
 from discord_archive.worker import Worker
 from discord_archive.service_control import ServiceControl
-from discord_archive.access import linux_access
+from discord_archive.access import linux_access, tailscale_ipv4
 from discord_archive.system_controls import StartupControl, HostPower
 from discord_archive.connection_binding import bind_connection
 from discord_archive.phone_sessions import PhoneSessions
@@ -109,7 +109,10 @@ class Application:
             # The systemd deployment is loopback-only; an interface IP is not
             # an HTTP entry point. Explain the tunnel separately in status.
             return [self.remote_access.origin] if self.remote_access.origin else []
-        addresses = [f'http://{self.local_hostname}.local:{self.port}']
+        if self.host in ('127.0.0.1', 'localhost', '::1'):
+            return []
+        addresses = [f'http://{value}:{self.port}' for value in tailscale_ipv4()]
+        addresses.append(f'http://{self.local_hostname}.local:{self.port}')
         for interface in ('en0', 'en1'):
             try:
                 value = subprocess.run(['/usr/sbin/ipconfig', 'getifaddr', interface], capture_output=True, text=True, timeout=2).stdout.strip()
@@ -156,7 +159,7 @@ class Application:
             'draft_revision': page['revision'], 'archive': archive,
             'credentials': credential_flags,
             'connection_helper': {'available': bool(local and sys.platform=='darwin' and (self.root/'.local/login-assistants/login-assistant-mac.zip').is_file())},
-            'remote': {'urls': self.remote_addresses(),'administrator':local,
+            'remote': {'listener_warning': getattr(self, 'listener_warning', None), 'listen_port': getattr(self, 'port', 8765), 'requested_port': getattr(getattr(self, 'startup', None), 'port', 8765), 'urls': self.remote_addresses(),'administrator':local,
                 'https_url':getattr(getattr(self,'remote_access',None),'origin',''),
                 **({'access':self._cached_status_value('linux_access',30,
                     lambda:linux_access(getattr(self,'host','127.0.0.1'),getattr(self,'port',8765)))} if sys.platform.startswith('linux') else {}),
@@ -527,7 +530,20 @@ def main():
     parser.add_argument('--root', default=str(Path(__file__).parent))
     args = parser.parse_args()
     app = Application(args.root, args.host, args.port)
-    server = ThreadingHTTPServer((args.host, args.port), make_handler(app))
+    from discord_archive.listener import bind_server, save_listener, read_listener, sync_private_proxy
+    try:
+        previous_listener = read_listener(app.root)
+        server = bind_server(ThreadingHTTPServer, app.root, args.host, args.port, make_handler(app))
+        app.port = server.server_address[1]
+        app.listener_warning = None
+        if sys.platform.startswith('linux') and args.host == '127.0.0.1' and app.remote_access.origin:
+            old_backend = previous_listener.get('url', f'http://127.0.0.1:{args.port}')
+            app.listener_warning = sync_private_proxy(app.remote_access.origin,
+                f'http://127.0.0.1:{app.port}', old_backend)
+        save_listener(app.root, args.host, args.port, app.port)
+    except Exception:
+        app.process_lock.close()
+        raise
     server.daemon_threads = True
     app.service.server = server
     app.worker.start()
@@ -537,7 +553,13 @@ def main():
         threading.Thread(target=server.shutdown, daemon=True).start()
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
-    print(f'答疑存档已启动：http://127.0.0.1:{args.port}', flush=True)
+    print(f'答疑存档已启动：http://127.0.0.1:{app.port}', flush=True)
+    if app.port != args.port:
+        print(f'端口提示：请求端口 {args.port}，当前使用 {app.port}；已保留该端口供下次启动。', flush=True)
+        if app.remote_access.origin:
+            print('已检查 Tailscale Serve 转发；请核对下面的告警（如有）。', flush=True)
+    if app.listener_warning:
+        print(app.listener_warning, flush=True)
     try:
         server.serve_forever()
     finally:

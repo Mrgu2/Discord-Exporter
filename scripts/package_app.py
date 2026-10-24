@@ -24,7 +24,7 @@ SOURCE_ALLOWLIST = (
     "Install.command", "Start.command", "Install-Speech.command",
     "scripts/install_mac.sh", "scripts/install_speech.py", "scripts/doctor.py",
     "scripts/browser_runtime.mjs", "scripts/check_browser.mjs", "scripts/verify_distribution.py",
-    "discord_archive/__init__.py", "discord_archive/assets.py", "discord_archive/access.py", "discord_archive/system_controls.py", "discord_archive/connection_binding.py", "discord_archive/remote_access.py",
+    "discord_archive/__init__.py", "discord_archive/listener.py", "discord_archive/assets.py", "discord_archive/access.py", "discord_archive/system_controls.py", "discord_archive/connection_binding.py", "discord_archive/remote_access.py",
     "discord_archive/browser_login.py", "discord_archive/collector.py",
     "discord_archive/context.py", "discord_archive/editorial.py",
     "discord_archive/export_names.py", "discord_archive/export_copy.py",
@@ -45,7 +45,8 @@ SOURCE_ALLOWLIST = (
     "docs/REFERENCE.md", "docs/INSTALLATION_ACCEPTANCE.md",
 )
 OPTIONAL_SOURCE_ALLOWLIST = (
-    "docs/DELIVERY.md", "tests/test_clawbot.py", "tests/clawbot_check.mjs", "tests/test_delivery.py", "tests/delivery_check.mjs",
+    "docs/images/workspace.png", "docs/images/export-example.png",
+    "docs/DELIVERY.md", "docs/RECOVERY_PORTS_ACCEPTANCE.md", "tests/test_clawbot.py", "tests/clawbot_check.mjs", "tests/test_delivery.py", "tests/test_listener.py", "tests/delivery_check.mjs",
     "docs/MAC.md", "docs/LINUX_SETUP.md", "docs/ACCESS.md", "docs/USAGE.md", "docs/OPERATIONS.md", "docs/TROUBLESHOOTING.md", "docs/GITHUB_PRIVACY.md", "helpers/login-assistant-mac.zip", "docs/FINAL_PACKAGE_ACCEPTANCE.md",
     "scripts/package_native_client.py", "login_assistant/native_client.go", "login_assistant/native_client_test.go", "login_assistant/native_extension/manifest.json", "login_assistant/native_extension/launch.mjs", "login_assistant/native_extension/session.mjs", "login_assistant/native_extension/popup.html", "login_assistant/native_extension/popup.mjs", "scripts/configure_tailscale.py", "scripts/install_login_assistants.py", "scripts/package_login_assistant.py", "login_assistant/assistant.mjs", "login_assistant/assistant.html", "login_assistant/bridge.json", "login_assistant/extension/manifest.json", "login_assistant/extension/intent.js", "login_assistant/extension/background.js", "login_assistant/extension/popup.html", "login_assistant/extension/popup.mjs", "tests/initial_loading_check.mjs", "tests/unified_login_check.mjs", "tests/test_mac_connection.py", "tests/test_helper_packages.py", "tests/test_remote_access.py", "tests/first_login_extension_check.mjs", "tests/first_login_network_check.mjs", "tests/login_assistant_check.mjs", "tests/remote_workspace_check.mjs", "docs/REMOTE_ACCESS_ACCEPTANCE.md", "docs/FIRST_LOGIN_ACCEPTANCE.md", "scripts/bind_linux.py", "scripts/receive_connection.py", "tests/test_connection_binding.py", "tests/connection_binding_check.mjs",
     "tests/test_system_controls.py", "tests/system_controls_check.mjs", "docs/SYSTEM_CONTROLS_ACCEPTANCE.md",

@@ -454,7 +454,7 @@
     text('offline-duration', lastSuccess ? elapsed(lastSuccess) : offlineSeconds !== undefined ? duration(offlineSeconds) : offlineSince ? elapsed(offlineSince) : '尚无成功记录');
     const retryAt = first(connectivity.retry_at, connectivity.next_retry_at, state.retry_at, state.next_retry_at);
     const retrySeconds = first(connectivity.retry_in_seconds, state.retry_in_seconds);
-    text('retry-countdown', needsAttention ? '需要本机处理' : retryAt ? countdown(retryAt) : retrySeconds !== undefined ? duration(retrySeconds) : isOffline ? '等待自动重试' : '无需重试');
+    text('retry-countdown', state.automatic_paused ? '已暂停' : needsAttention ? '需要本机处理' : retryAt ? countdown(retryAt) : retrySeconds !== undefined ? duration(retrySeconds) : isOffline ? '等待自动重试' : '无需重试');
     const gapHours = first(connectivity.gap_hours, archive.gap_hours, state.gap_hours);
     const gaps = first(archive.gaps, state.gaps, connectivity.gaps);
     const gapSeconds = first(connectivity.gap_seconds, state.gap_seconds);
@@ -605,10 +605,13 @@
           : '未检测到 Tailscale。相同局域网可直接建立 SSH 隧道；跨网络先配置私有网络，不开放公网端口。')
       );
     }
+    if (remote.listener_warning) $('remote-urls').append(node('p', 'inline-error', remote.listener_warning));
+    if (remote.listen_port && remote.requested_port && remote.listen_port !== remote.requested_port) $('remote-urls').append(node('p', 'form-help', `当前工作台使用端口 ${remote.listen_port}（请求端口 ${remote.requested_port}）。如使用 SSH 隧道或 Tailscale Serve，请将转发目标设为当前端口。`));
     if(remote.https_url){
       $('remote-urls').closest('.settings-section').querySelector('h2').textContent='以后如何访问';
-      $('remote-urls').append(node('p','form-help','保持 Tailscale 在线，收藏上方 HTTPS 地址即可。不需要 SSH 隧道；由获准的 Tailscale 账号管理。'));
+      $('remote-urls').append(node('p','form-help','手机也可访问：安装并连接获准的 Tailscale 账号，再打开上方 HTTPS 地址。Ubuntu 仅监听本机时，Tailscale IP 用于 SSH，不能直接加端口打开工作台。'));
     }
+    if (!remote.https_url && snapshot?.platform?.system !== 'linux') $('remote-urls').append(node('p', 'form-help', '手机连接同一 Tailscale 私网后，也可使用这台 Mac 的 Tailscale IP 加当前工作台端口访问（例如 http://100.x.x.x:8765，端口以上方地址为准）。Mac 需开启局域网监听；请勿开放公网端口。'));
     $('remote-code-block').hidden = !isLocal || !remote.access_code;
     text('remote-code', isLocal && remote.access_code ? remote.access_code : '');
   }
@@ -1082,6 +1085,7 @@
       const connectivity = snapshot.connectivity || snapshot.state?.connectivity || {};
       const retryAt = first(connectivity.retry_at, connectivity.next_retry_at, snapshot.state?.retry_at, snapshot.state?.next_retry_at);
       if (snapshot.state?.automatic_paused) text('retry-countdown', '已暂停');
+      else if (first(connectivity.requires_attention, snapshot.state?.requires_attention)) text('retry-countdown', '需要本机处理');
       else if (retryAt) text('retry-countdown', countdown(retryAt));
       const lastSuccess = first(snapshot.state?.last_success_at, snapshot.state?.last_capture_success_at, snapshot.state?.last_success, snapshot.state?.last_capture_at, connectivity.last_success_at);
       if (lastSuccess) text('offline-duration', elapsed(lastSuccess));

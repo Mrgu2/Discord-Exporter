@@ -149,24 +149,28 @@ class ScheduledExporterTests(unittest.TestCase):
         self.worker.drafts.render.assert_not_called()
         self.assertTrue(self.exporter.run(self.worker,SLOT)['deduplicated'])
 
-    def test_newer_due_slot_can_replace_pending_retry_wait(self):
+    def test_newer_slot_waits_for_interrupted_task_and_retry_deadline(self):
         self.config=configuration(times=['16:15','16:30']);self.enabled()
         self.worker.drafts.render.side_effect=ValueError('fictitious failure')
         with self.assertRaises(ValueError):self.exporter.run(self.worker,SLOT)
         self.exporter._save(retry_at='2026-10-23T21:00:00Z')
-        newer=self.exporter.due(self.config,'2026-10-23T20:30:00Z')
-        self.assertEqual(newer['scheduled_at'],'2026-10-23T20:30:00Z')
+        self.assertIsNone(self.exporter.due(self.config,'2026-10-23T20:30:00Z'))
+        recovered=self.exporter.due(self.config,'2026-10-23T21:00:00Z')
+        self.assertEqual(recovered,SLOT)
         self.worker.drafts.render.side_effect=lambda draft_id,**kw:rendered(kw['render_scale'])
-        self.exporter.run(self.worker,newer)
-        self.assertEqual(self.worker.capture.call_count,2);self.assertEqual(self.worker.drafts.generate.call_count,2)
+        self.exporter.run(self.worker,recovered)
+        self.assertEqual(self.worker.capture.call_count,1)
+        self.assertEqual(self.worker.drafts.generate.call_count,1)
+        self.assertEqual(self.exporter.due(self.config,'2026-10-23T21:00:00Z')['scheduled_at'],
+            '2026-10-23T20:30:00Z')
 
-    def test_72_hour_restart_recovers_saved_draft_but_does_not_backfill_capture(self):
+    def test_72_hour_restart_recovers_all_durable_stages(self):
         self.enabled();self.worker.drafts.render.side_effect=ValueError('fictitious disconnected drive')
         with self.assertRaises(ValueError):self.exporter.run(self.worker,SLOT)
         restarted=ScheduledExporter(self.root)
         self.assertEqual(restarted.due(self.config,'2026-10-26T20:10:00Z'),SLOT)
         restarted._save(pending={**restarted.state['pending'],'stage':'capture'})
-        self.assertIsNone(restarted.due(self.config,'2026-10-26T20:10:00Z'))
+        self.assertEqual(restarted.due(self.config,'2026-10-26T20:10:00Z'),SLOT)
 
     def test_stage_checkpoints_are_independent_snapshots_and_survive_generate_failure(self):
         self.enabled();self.worker.drafts.generate.side_effect=ValueError('fictitious generate failure')

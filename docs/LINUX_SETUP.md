@@ -57,15 +57,15 @@ sudo tailscale up --hostname discordarchive-ubuntu
 
 ```sh
 python3 scripts/configure_tailscale.py
-sudo tailscale serve --bg http://127.0.0.1:8765
-systemctl --user restart discordarchive.service
 ```
 
-第一次使用 Serve 若出现启用 HTTPS 的网页链接，按提示由私网管理员确认，回终端等待完成；这可能是加入设备后另一轮确认，不要以为刚才登录失败。成功后执行 `tailscale serve status`，应显示实际 HTTPS 地址和 `127.0.0.1:8765` 转发目标；此时才继续。
+复制配置器刚输出的 `sudo tailscale serve --bg http://127.0.0.1:实际端口` 命令并执行，再执行 `systemctl --user restart discordarchive.service`。不要固定照抄 8765；端口占用时应用会自动换端口。
+
+第一次使用 Serve 若出现启用 HTTPS 的网页链接，按提示由私网管理员确认，回终端等待完成；这可能是加入设备后另一轮确认，不要以为刚才登录失败。成功后执行 `tailscale serve status`，应显示实际 HTTPS 地址和配置器输出的实际转发目标；此时才继续。
 
 配置器默认只允许该服务器注册时所属的 Tailscale 用户管理工作台；需要显式指定所有者时用 `--owner Tailscale登录名`。它会输出类似 `https://主机.私网.ts.net` 的固定地址，收藏自己的实际地址，别照抄别人的域名。
 
-应用仍只监听 `127.0.0.1:8765`，由 Serve 提供私网 HTTPS；不开放公网，不启用 Funnel。工作台通过可信的 Serve 身份头识别获准管理员，不必再填工作台访问口令。其他用户、缺少身份头或公网转发均不获得管理权限。
+应用仍只监听 `127.0.0.1:实际端口`，由 Serve 提供私网 HTTPS；不开放公网，不启用 Funnel。工作台通过可信的 Serve 身份头识别获准管理员，不必再填工作台访问口令。其他用户、缺少身份头或公网转发均不获得管理权限。
 
 ## 连接 Discord
 

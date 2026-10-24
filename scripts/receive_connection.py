@@ -14,6 +14,13 @@ def receive(root):
     if not isinstance(value,dict) or set(value)!={'credential','expected_user_id'}:
         raise ValueError('invalid_protocol')
     opener=build_opener(ProxyHandler({}));base='http://127.0.0.1:8765'
+    # Root-scoped listener metadata is verified again against live status.
+    try:
+        listener=json.loads((root/'data/listener.json').read_text())
+        port=listener.get('port')
+        if listener.get('project_id')==hashlib.sha256(str(root).encode()).hexdigest() and type(port) is int and 1<=port<=65535:
+            base=f'http://127.0.0.1:{port}'
+    except (OSError, ValueError, TypeError): pass
     status=json.load(opener.open(base+'/api/status',timeout=10))
     expected=hashlib.sha256(str(root).encode()).hexdigest()
     if status.get('platform',{}).get('system')!='linux' or status.get('system',{}).get('project_id')!=expected:

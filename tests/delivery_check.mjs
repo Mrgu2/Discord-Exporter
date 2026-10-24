@@ -46,6 +46,28 @@ try {
    return route.fulfill({status:404,body:''});
   });
   await page.goto('http://archive.example:8765/#settings',{waitUntil:'networkidle'});
+  data.state.automatic_paused=true;
+  data.connectivity.retry_at='2000-01-01T00:00:00Z';
+  await page.locator('#refresh-button').click();
+  await page.waitForFunction(()=>document.querySelector('#retry-countdown').textContent==='已暂停');
+  await page.evaluate(()=>{
+   window.retryLabels=[];
+   new MutationObserver(()=>window.retryLabels.push(document.querySelector('#retry-countdown').textContent))
+    .observe(document.querySelector('#retry-countdown'),{childList:true,subtree:true,characterData:true});
+  });
+  await page.waitForTimeout(7100);
+  assert.ok((await page.evaluate(()=>window.retryLabels)).every(value=>value==='已暂停'),'Paused label flickered during polling/clock updates');
+  data.state.automatic_paused=false;data.state.requires_attention=true;
+  await page.locator('#refresh-button').click();
+  await page.waitForFunction(()=>document.querySelector('#retry-countdown').textContent==='需要本机处理');
+  await page.waitForTimeout(1200);
+  assert.equal(await page.locator('#retry-countdown').textContent(),'需要本机处理');
+  data.state.requires_attention=false;
+  data.state.delivery=Array.from({length:30},(_,i)=>({id:`record-${i}`,channel:'telegram',title:`测试 ${i}`,test:true,status:'sent'}));
+  await page.locator('#refresh-button').click();
+  await page.waitForFunction(()=>document.querySelectorAll('.delivery-record').length===30);
+  assert.equal(await page.locator('#delivery-history').evaluate(el=>el.clientHeight<=360&&el.scrollHeight>el.clientHeight),true);
+  data.state.delivery=[];
   for(const name of ['email','telegram','discord'])assert.equal(await page.locator(`#delivery-${name}-enabled`).isChecked(),false);
   await page.locator('[data-delivery-channel="telegram"] summary').click();
   await page.locator('#delivery-telegram-chat_id').fill('123456');

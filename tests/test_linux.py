@@ -11,7 +11,7 @@ from unittest.mock import Mock, patch
 
 from discord_archive.browser_login import BrowserLogin
 from discord_archive.speech import SpeechArchive
-from discord_archive.access import private_addresses, linux_access
+from discord_archive.access import tailscale_ipv4, private_addresses, linux_access
 
 ROOT=Path(__file__).resolve().parent.parent
 spec=importlib.util.spec_from_file_location('linux_service',ROOT/'scripts/install_linux_service.py')
@@ -19,6 +19,12 @@ service=importlib.util.module_from_spec(spec);spec.loader.exec_module(service)
 
 
 class LinuxTests(unittest.TestCase):
+    def test_tailscale_hint_only_advertises_tailnet_ip(self):
+        with patch('discord_archive.access.shutil.which', return_value='/fake/tailscale'), patch('discord_archive.access.subprocess.run', return_value=Mock(returncode=0, stdout='100.64.1.9\n192.168.0.9')):
+            self.assertEqual(tailscale_ipv4(), ['100.64.1.9'])
+        with patch('discord_archive.access.shutil.which', return_value='/fake/tailscale'), patch('discord_archive.access.subprocess.run', side_effect=FileNotFoundError):
+            self.assertEqual(tailscale_ipv4(), [])
+
     def test_access_report_does_not_advertise_public_proxy_or_loopback_ips(self):
         rows=[{'addr_info':[{'local':value} for value in
             ['127.0.0.1','192.168.1.66','100.64.1.2','198.18.0.1','8.8.8.8','bad','::1']]}]

@@ -5,9 +5,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
-import { createRequire } from 'node:module';
+import {loadPlaywright, browserOptions} from './browser_runtime.mjs';
 
-const require=createRequire(import.meta.url);
 const profile=path.resolve(process.argv[2]||'');
 const waitMs=Math.min(565000,Math.max(250,Number(process.argv[3])||565000));
 let wrote=false;
@@ -36,12 +35,6 @@ export async function requestCandidate(request){
   }catch{return null;}
 }
 
-async function loadPlaywright(){
-  try{return require('playwright');}catch{}
-  const candidates=[process.env.PLAYWRIGHT_MODULE,path.join(os.homedir(),'.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.js')].filter(Boolean);
-  for(const candidate of candidates){try{const loaded=await import(pathToFileURL(candidate).href);return loaded.default||loaded;}catch{}}
-  throw new Error('playwright_missing');
-}
 
 async function main(){
   if(process.stdout.isTTY)throw new Error('backend_pipe_required');
@@ -60,13 +53,12 @@ async function main(){
   }
   record({});
   const playwright=await loadPlaywright();
-  const executable='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
   let context,closed=false,observedCandidate=null;
   const deadline=Date.now()+waitMs;
   try{
     context=await playwright.chromium.launchPersistentContext(profile,{
       headless:false,timeout:Math.min(30000,waitMs),viewport:null,
-      ...(fs.existsSync(executable)?{executablePath:executable}:{channel:'chrome'}),
+      ...browserOptions(playwright),
       args:['--no-first-run','--no-default-browser-check'],
     });
     context.on('close',()=>{closed=true;});
@@ -118,5 +110,5 @@ async function main(){
 }
 
 if(path.resolve(process.argv[1]||'')===fileURLToPath(import.meta.url)){
-  main().catch(()=>{result({status:'error',code:'browser_unavailable'});process.exitCode=1;});
+  main().catch(error=>{result({status:'error',code:/缺少|指定的浏览器/.test(error.message)?'setup_required':'browser_unavailable'});process.exitCode=1;});
 }

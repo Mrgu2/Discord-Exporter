@@ -89,6 +89,13 @@ def matching_agent(root: Path, plist_path: Path) -> bool:
         return False
 
 
+def agent_autostart(plist_path: Path) -> bool:
+    try:
+        return plistlib.loads(plist_path.read_bytes()).get('RunAtLoad',True) is not False
+    except (OSError,ValueError,TypeError):
+        return True
+
+
 def wait_healthy(timeout: float = 30) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -112,7 +119,7 @@ def ensure_service(root: Path) -> str:
     domain = f"gui/{os.getuid()}"
     target = f"{domain}/{LABEL}"
     plist = Path.home() / "Library" / "LaunchAgents" / f"{LABEL}.plist"
-    if sys.platform == "darwin" and matching_agent(root, plist):
+    if sys.platform == "darwin" and matching_agent(root, plist) and agent_autostart(plist):
         state = launchctl("print", target)
         loaded = state.returncode == 0
         if loaded:
@@ -122,6 +129,10 @@ def ensure_service(root: Path) -> str:
             # No -k: a running service and its in-flight jobs remain untouched.
             result = launchctl("kickstart", target)
         else:
+            # A deliberate stop disables login relaunch until the App is opened.
+            enabled = launchctl("enable", target)
+            if enabled.returncode != 0:
+                raise RuntimeError("无法恢复后台服务；未改写或重装服务，请查看当前用户的后台服务权限。")
             result = launchctl("bootstrap", domain, str(plist))
         if result.returncode != 0:
             raise RuntimeError("现有后台服务未能启动；未改写或重装服务。请查看后台服务状态。")
@@ -131,7 +142,7 @@ def ensure_service(root: Path) -> str:
     data.mkdir(mode=0o700, parents=True, exist_ok=True)
     env = os.environ.copy()
     node = shutil.which("node")
-    directories = ([str(Path(node).parent)] if node else []) + [
+    directories = [str(root / ".runtime" / "bin")] + ([str(Path(node).parent)] if node else []) + [
         str(Path(sys.executable).parent), "/opt/homebrew/bin", "/usr/local/bin",
         "/usr/bin", "/bin", "/usr/sbin", "/sbin",
     ]

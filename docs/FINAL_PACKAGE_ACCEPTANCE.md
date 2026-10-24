@@ -1,0 +1,15 @@
+# 分发包验证方法
+
+公开文档仅描述验证方法，不包含私人账号、设备标识、实机运行日志或聊天样本。测试结果以当前版本实际运行的回执为准；历史私人验收记录不随源码分发。
+
+源码包包含程序与必要依赖声明；客户端包按访问电脑的平台选择，首次连接工具与日常访问入口分别核对。操作入口见 [README](../README.md)。
+
+验证精确文件清单、SHA-256、ZIP CRC、组件协议和平台架构。检查安装后服务健康，以及独立合成资料库从保存到 PNG 的路径。构建机器验证不等于其他系统实机通过。
+
+```sh
+python3 -m unittest discover -s tests -p 'test_packaging.py'
+python3 -m unittest discover -s tests -p 'test_helper_packages.py'
+python3 -m unittest discover -s tests -p 'test_installation.py'
+```
+
+只分发经过核对的原始包。工作台专用下载可能附带服务器地址或资料库身份，不直接上传到公开仓库。未完成的平台实测、Developer ID 公证和商店发布不得标为已通过。

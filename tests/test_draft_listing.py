@@ -1,6 +1,7 @@
 import json
 import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -73,6 +74,13 @@ class DraftListingTests(unittest.TestCase):
         replacement = {**original,'title':'稿件 Z'}
         path.write_text(json.dumps(replacement,ensure_ascii=False))
         os.utime(path,ns=(old_stat.st_atime_ns,old_stat.st_mtime_ns))
+        # Some Linux VM filesystems timestamp both writes in one clock tick.
+        # This case tests ctime invalidation, so establish a distinct ctime
+        # while retaining the original mtime, inode and byte length.
+        deadline = time.monotonic() + 1
+        while path.stat().st_ctime_ns == old_stat.st_ctime_ns:
+            self.assertLess(time.monotonic(), deadline, 'Filesystem ctime did not advance')
+            os.utime(path, ns=(old_stat.st_atime_ns, old_stat.st_mtime_ns))
         changed = self.service.list_draft_page()
         self.assertEqual(changed['items'][0]['title'],'稿件 Z')
         self.assertNotEqual(first['revision'],changed['revision'])

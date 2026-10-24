@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Discord Archive 首次连接",
+  "version": "0.4.0",
+  "description": "本人点击后，将当前 Discord 登录连接通过本机组件加密绑定到自己的 Ubuntu。",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuOj63Nh+s9kcDXfhy2oujlNcMfIQY/rVE+Whq1LbUNvA0BtRv6p7LmVFxX5F/M/7CPJHgpg7YP55GJd1YqWzeUVc/+QeVcD/88b2ZBTe9sqKNdlcOaOTOVqQFJ9zoaB7NoYDLToozcBx05WaIBqdlFpYTwrTzfWng4k/2+OpdS6hvCxLvdW5g65sgB0KGwMp0kCWeaTzPDWQn1JB+iGjxy/WzZOo08K7Q//k+h4qVF5KOW5wJ6s2kkgGmOtnJPtGHsFgWCfdTBraPgGpq0bBq8mdRMwUHgvFOwZaRnjOKaGPQZW/Gb+b4fqCGZQxDwbxVKKN7krCyfPW5Ns2/Ro4EQIDAQAB",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "nativeMessaging",
+    "webRequest"
+  ],
+  "action": {
+    "default_title": "首次连接 Discord"
+  },
+  "host_permissions": [
+    "https://discord.com/*"
+  ],
+  "background": {
+    "service_worker": "launch.mjs",
+    "type": "module"
+  }
+}

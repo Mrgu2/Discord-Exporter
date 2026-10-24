@@ -26,6 +26,13 @@ package = load("package_app", "package_app.py")
 
 
 class LauncherTests(unittest.TestCase):
+    def test_manual_open_does_not_reenable_disabled_autostart(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            with mock.patch.object(launcher,'health',return_value='offline'),mock.patch.object(launcher,'archive_locked',return_value=False),mock.patch.object(launcher,'matching_agent',return_value=True),mock.patch.object(launcher,'agent_autostart',return_value=False),mock.patch.object(launcher,'wait_healthy'),mock.patch.object(launcher.sys,'platform','darwin'),mock.patch.object(launcher,'launchctl') as command,mock.patch.object(launcher.subprocess,'Popen') as spawn:
+                self.assertEqual(launcher.ensure_service(root),'started')
+                command.assert_not_called();spawn.assert_called_once()
+
     def project(self, root):
         for name in ("app.py", "discord_archive/__init__.py", "web/index.html"):
             target = root / name
@@ -113,6 +120,16 @@ class LauncherTests(unittest.TestCase):
                                              "ProgramArguments": ["python", "/another/app.py"]}))
             self.assertFalse(launcher.matching_agent(ROOT, plist))
 
+    def test_stopped_agent_is_enabled_before_bootstrap(self):
+        with mock.patch.object(launcher, "health", return_value="offline"), \
+             mock.patch.object(launcher, "archive_locked", return_value=False), \
+             mock.patch.object(launcher, "matching_agent", return_value=True), \
+             mock.patch.object(launcher, "wait_healthy"), \
+             mock.patch.object(launcher.sys, "platform", "darwin"), \
+             mock.patch.object(launcher, "launchctl", side_effect=[subprocess.CompletedProcess([], 1), subprocess.CompletedProcess([], 0), subprocess.CompletedProcess([], 0)]) as command:
+            self.assertEqual(launcher.ensure_service(ROOT), "agent")
+            self.assertEqual([c.args[0] for c in command.call_args_list], ["print", "enable", "bootstrap"])
+
 
 class PackageTests(unittest.TestCase):
     def fake_source(self, root):
@@ -134,7 +151,7 @@ class PackageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             app = self.fake_source(root)
-            for name in ("data/credentials.json", "output/private.md", ".env", "models/weights.bin", "scripts/private.py"):
+            for name in ("data/credentials.json", "data/browser-profile/Default/Cookies", "output/private.md", ".env", "models/weights.bin", "scripts/private.py", ".runtime/bin/python3", "node_modules/private.js", ".venv/private.txt"):
                 target = root / name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text("sensitive content")
@@ -145,6 +162,8 @@ class PackageTests(unittest.TestCase):
                 self.assertFalse(any(b"sensitive content" in bundle.read(name) for name in bundle.namelist()))
                 name = f"{package.ZIP_ROOT}/{package.APP_NAME}/Contents/MacOS/applet"
                 self.assertTrue((bundle.getinfo(name).external_attr >> 16) & 0o111)
+                for script in ('Install.command', 'Start.command', 'Install-Speech.command', 'scripts/install_mac.sh'):
+                    self.assertTrue((bundle.getinfo(f'{package.ZIP_ROOT}/{script}').external_attr >> 16) & 0o111)
 
     def test_source_symlink_is_not_followed(self):
         with tempfile.TemporaryDirectory() as temporary:

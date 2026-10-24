@@ -20,7 +20,7 @@ DEFAULT_CONFIG = {
         'window': {'enabled': True, 'start': '15:50', 'end': '16:10', 'every_minutes': 5, 'weekdays': [0, 1, 2, 3, 4]}},
     'model': {'enabled': False, 'base_url': '', 'model': ''},
     'download_media': True,
-    'speech': {'enabled': True, 'language': 'zh', 'model_path': '', 'python': ''},
+    'speech': {'enabled': False, 'language': 'zh', 'model_path': '', 'python': ''},
     'export': {'name_prefix': '答疑存档', 'date_format': 'YYYY-MM-DD',
         'sequence_digits': 2, 'separator': '-', 'copy_directory': ''},
     'auto_export': copy.deepcopy(AUTO_EXPORT_DEFAULTS),
@@ -180,6 +180,7 @@ class Credentials:
 
     def __init__(self, root):
         self.path = Path(root) / 'data' / 'credentials.json'
+        self.use_keychain = os.environ.get('DISCORD_ARCHIVE_CREDENTIAL_STORE') != 'file'
 
     def get(self, kind):
         environment = os.environ.get('DISCORD_ARCHIVE_TOKEN' if kind == 'discord' else 'ARCHIVE_MODEL_KEY')
@@ -189,7 +190,7 @@ class Credentials:
             fallback = json.loads(self.path.read_text()).get(kind)
             if fallback:
                 return fallback
-        if Path('/usr/bin/security').exists():
+        if self.use_keychain and Path('/usr/bin/security').exists():
             try:
                 result = subprocess.run(['/usr/bin/security', 'find-generic-password', '-s', self.SERVICE, '-a', kind, '-w'], capture_output=True, text=True, timeout=2)
             except (OSError, subprocess.SubprocessError):
@@ -204,7 +205,7 @@ class Credentials:
         value = value.strip()
         if '\n' in value or '\r' in value:
             raise ValueError('凭证包含意外换行')
-        if Path('/usr/bin/security').exists():
+        if self.use_keychain and Path('/usr/bin/security').exists():
             try:
                 result = subprocess.run(['/usr/bin/security', 'add-generic-password', '-U', '-s', self.SERVICE, '-a', kind, '-w', value], capture_output=True, timeout=12)
                 saved = result.returncode == 0

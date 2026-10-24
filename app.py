@@ -27,6 +27,12 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from discord_archive.settings import Credentials, Settings, access_code
 from discord_archive.store import ArchiveStore
 from discord_archive.worker import Worker
+from discord_archive.service_control import ServiceControl
+from discord_archive.access import linux_access
+from discord_archive.system_controls import StartupControl, HostPower
+from discord_archive.connection_binding import bind_connection
+from discord_archive.phone_sessions import PhoneSessions
+from discord_archive.remote_access import RemoteAccess, LoginPairings, DeviceAuthorizations
 
 
 def choose_export_directory():
@@ -66,8 +72,12 @@ class Application:
         from discord_archive.editorial import DraftService
         self.drafts = DraftService(self.store, self.root, self.settings, self.credentials)
         self.worker = Worker(self.store, self.root, self.settings, self.credentials, self.drafts)
+        self.service = ServiceControl(self.worker)
+        self.startup = StartupControl(self.root,self.host,self.port)
+        self.remote_access, self.login_pairings = RemoteAccess(self.root), LoginPairings()
+        self.device_authorizations=DeviceAuthorizations(self.login_pairings)
         self.code, self.csrf = access_code(self.root), secrets.token_urlsafe(24)
-        self.sessions, self.login_attempts = {}, {}
+        self.sessions, self.login_attempts = PhoneSessions(self.root, self.code), {}
         self._status_cache, self._status_cache_lock = {}, threading.RLock()
         self.local_hostname = socket.gethostname().split('.')[0]
         try:
@@ -95,6 +105,10 @@ class Application:
             self._status_cache.clear()
 
     def _discover_addresses(self):
+        if sys.platform.startswith('linux'):
+            # The systemd deployment is loopback-only; an interface IP is not
+            # an HTTP entry point. Explain the tunnel separately in status.
+            return [self.remote_access.origin] if self.remote_access.origin else []
         addresses = [f'http://{self.local_hostname}.local:{self.port}']
         for interface in ('en0', 'en1'):
             try:
@@ -132,11 +146,21 @@ class Application:
         credential_flags = self._cached_status_value(('credentials', credential_revision), 30,
             lambda: {kind: bool(self.credentials.get(kind)) for kind in ('discord', 'model')})
         return {
-            'config': self.settings.read(), 'state': state, 'connectivity': connectivity,
+            'platform': {'system': sys.platform, 'login_desktop': bool(os.environ.get('DISCORD_ARCHIVE_LOGIN_DESKTOP')) if local else False},
+            'system': self._cached_status_value('system_controls',30,
+                lambda:{'hostname':self.local_hostname,'binding_root':str(self.root.resolve()),'project_id':hashlib.sha256(str(self.root.resolve()).encode()).hexdigest(),
+                    'startup':self.startup.status(),'power':self.service.power.status()})
+                if local and hasattr(self,'startup') else {},
+            'archive_key': self.csrf, 'service': self.service.status(), 'config': self.settings.read(), 'state': state, 'connectivity': connectivity,
             'runs': runs, 'drafts': page['items'], 'draft_count': page['total'],
             'draft_revision': page['revision'], 'archive': archive,
             'credentials': credential_flags,
-            'remote': {'urls': self.remote_addresses(), **({'access_code': self.code} if local else {})},
+            'connection_helper': {'available': bool(local and sys.platform=='darwin' and (self.root/'.local/login-assistants/login-assistant-mac.zip').is_file())},
+            'remote': {'urls': self.remote_addresses(),'administrator':local,
+                'https_url':getattr(getattr(self,'remote_access',None),'origin',''),
+                **({'access':self._cached_status_value('linux_access',30,
+                    lambda:linux_access(getattr(self,'host','127.0.0.1'),getattr(self,'port',8765)))} if sys.platform.startswith('linux') else {}),
+                **({'access_code': self.code} if local else {})},
         }
 
 
@@ -151,11 +175,20 @@ def make_handler(application):
             return
 
         def local(self):
+            if any(key in self.headers for key in ('X-Forwarded-For','X-Forwarded-Proto','Forwarded','Tailscale-User-Login')):
+                return False
             hostname = urlsplit('http://' + self.headers.get('Host', '')).hostname
             return self.client_address[0] in ('127.0.0.1', '::1') and hostname in ('127.0.0.1', 'localhost', '::1')
 
+        def administrator(self):
+            remote=getattr(app,'remote_access',None)
+            return self.local() or bool(remote and remote.trusted(self.client_address[0],self.headers))
+
         def valid_host(self):
             hostname = urlsplit('http://' + self.headers.get('Host', '')).hostname or ''
+            remote=getattr(app,'remote_access',None)
+            if remote and (hostname==remote.hostname or any(key in self.headers for key in ('X-Forwarded-For','X-Forwarded-Proto','Forwarded','Tailscale-User-Login'))):
+                return remote.trusted(self.client_address[0],self.headers)
             if hostname in ('localhost', app.local_hostname.lower() + '.local'):
                 return True
             if hostname in os.environ.get('ARCHIVE_ALLOWED_HOSTS', '').split(','):
@@ -167,7 +200,7 @@ def make_handler(application):
                 return False
 
         def authorized(self):
-            if self.local():
+            if self.administrator():
                 return True
             cookie = SimpleCookie()
             try:
@@ -241,11 +274,25 @@ def make_handler(application):
                 return self.send(200, content, 'text/html; charset=utf-8')
             if url.path.startswith('/web/'):
                 return self.file(app.root / 'web', url.path.removeprefix('/web/'))
+            if url.path in ('/download/login-assistant-mac.zip','/download/login-assistant-windows.zip'):
+                if not self.administrator():return self.send(403,{'error':'仅管理员可下载登录助手'})
+                source=app.root/'.local/login-assistants'/url.path.rsplit('/',1)[-1]
+                if not source.is_file():return self.send(404,{'error':'此平台助手尚未部署，请联系管理员'})
+                import io,zipfile
+                output=io.BytesIO()
+                with zipfile.ZipFile(source) as original,zipfile.ZipFile(output,'w',compression=zipfile.ZIP_DEFLATED) as archive:
+                    for member in original.infolist():
+                        if member.filename!='server.json':archive.writestr(member,original.read(member.filename))
+                    target={'server_url':app.remote_access.origin}
+                    if self.local() and sys.platform=='darwin':
+                        target={'server_url':f'http://127.0.0.1:{app.port}','project_id':hashlib.sha256(str(app.root).encode()).hexdigest()}
+                    archive.writestr('server.json',json.dumps(target))
+                return self.send(200,output.getvalue(),'application/zip',{'Content-Disposition':'attachment; filename="'+source.name+'"'})
             if not self.authorized():
                 return self.send(401, {'error': '请先输入本机显示的手机访问口令'})
             try:
                 if url.path == '/api/status':
-                    return self.send(200, app.status(local=self.local()))
+                    return self.send(200, app.status(local=self.administrator()))
                 if url.path == '/api/drafts':
                     query = parse_qs(url.query)
                     try:
@@ -257,6 +304,10 @@ def make_handler(application):
                         return self.send(400, {'error': '分页参数无效'})
                     return self.send(200, app.drafts.list_draft_page(
                         limit=limit, offset=offset, search=query.get('search', [''])[0]))
+                if url.path == '/api/helper/authorization':
+                    if not self.administrator():return self.send(403,{'error':'仅管理员可确认授权'})
+                    try:return self.send(200,app.device_authorizations.info(parse_qs(url.query).get('id',[''])[0]))
+                    except ValueError as exc:return self.send(400,{'error':str(exc)})
                 if url.path == '/api/config':
                     return self.send(200, app.settings.read())
                 if url.path == '/api/source':
@@ -279,8 +330,29 @@ def make_handler(application):
             origin = self.headers.get('Origin')
             if origin and urlsplit(origin).netloc != self.headers.get('Host'):
                 return self.send(403, {'error': '只接受本页操作'})
+            helper_path=urlsplit(self.path).path
+            if helper_path in ('/api/helper/request','/api/helper/poll','/api/helper/inspect','/api/helper/bind'):
+                remote=getattr(app,'remote_access',None)
+                if not remote or not remote.trusted(self.client_address[0],self.headers):
+                    return self.send(403,{'error':'登录助手仅接受本人 Tailscale HTTPS 连接'})
+                try:
+                    if int(self.headers.get('Content-Length',0))>16384:raise ValueError('绑定请求过大')
+                    data=self.body()
+                    if helper_path.endswith('/request'):
+                        return self.send(200,app.device_authorizations.request(remote.origin,data.get('device')))
+                    if helper_path.endswith('/poll'):
+                        return self.send(200,app.device_authorizations.poll(data.get('request_id'),data.get('poll_secret')))
+                    app.login_pairings.check(data.get('pairing_code'),consume=helper_path.endswith('/bind'))
+                    if helper_path.endswith('/inspect'):
+                        return self.send(200,{'ok':True,'server_url':remote.origin,'server_name':app.local_hostname,
+                            'existing_account':(app.worker.state.get('browser_account') or {}).get('name')})
+                    result=bind_connection(app.credentials,app.worker,data.get('credential'),data.get('expected_user_id'))
+                    app.invalidate_status_cache()
+                    return self.send(200,{'ok':result['ok'],'automatic_paused':True})
+                except (ValueError,KeyError) as exc:return self.send(400,{'error':str(exc)})
+                except Exception:return self.send(500,{'error':'绑定未完成；请重新生成配对码后重试'})
             if not hmac.compare_digest(self.headers.get('X-Archive-Key', ''), app.csrf):
-                return self.send(403, {'error': '页面已更新，请刷新后重试'})
+                return self.send(403, {'error': '页面已更新，请刷新后重试', 'code': 'csrf_expired'})
             path = urlsplit(self.path).path
             try:
                 data = self.body()
@@ -298,10 +370,62 @@ def make_handler(application):
                     return self.send(200, {'ok': True}, extra={'Set-Cookie': f'archive_session={session}; HttpOnly; SameSite=Strict; Path=/; Max-Age=2592000'})
                 if not self.authorized():
                     return self.send(401, {'error': '请先登录手机界面'})
+                if path == '/api/helper/approve' and self.command == 'POST':
+                    if not self.administrator():return self.send(403,{'error':'仅管理员可确认授权'})
+                    return self.send(200,app.device_authorizations.approve(data.get('request_id')))
+                if path == '/api/helper/pair' and self.command == 'POST':
+                    if not self.administrator():return self.send(403,{'error':'仅管理员可生成配对码'})
+                    remote=getattr(app,'remote_access',None)
+                    if not remote or not remote.origin:raise ValueError('请先配置 Tailscale HTTPS 访问')
+                    return self.send(200,{**app.login_pairings.issue(),'server_url':remote.origin})
+                if path == '/api/bind-discord' and self.command == 'POST':
+                    if not self.administrator():
+                        return self.send(403,{'error':'绑定连接仅允许本机或 SSH 隧道操作'})
+                    if sys.platform=='darwin' and data.get('expected_project_id')!=hashlib.sha256(str(app.root).encode()).hexdigest():
+                        raise ValueError('本机资料库已变化，请从当前工作台重新下载首次连接包')
+                    result=bind_connection(app.credentials,app.worker,data.get('credential'),data.get('expected_user_id'))
+                    app.invalidate_status_cache()
+                    return self.send(200,result)
+                if path == '/api/autostart' and self.command == 'POST':
+                    if not self.administrator():
+                        return self.send(403, {'error':'自动启动设置仅允许本机或 SSH 隧道操作'})
+                    if app.service.action:
+                        raise ValueError('服务操作正在进行，请稍后修改自动启动')
+                    try:
+                        result=app.startup.set_enabled(data.get('enabled'))
+                    except RuntimeError as exc:
+                        raise ValueError(str(exc)) from None
+                    app.invalidate_status_cache()
+                    return self.send(200,result)
+                if path == '/api/host-power' and self.command == 'POST':
+                    if not self.administrator():
+                        return self.send(403, {'error':'服务器电源操作仅允许本机或 SSH 隧道操作'})
+                    confirmations={'reboot':'重启服务器','poweroff':'关闭服务器'}
+                    action=data.get('action')
+                    if action not in confirmations or data.get('confirmation')!=confirmations[action]:
+                        raise ValueError('请输入对应的服务器电源操作确认文字')
+                    result=app.service.request('host-'+action)
+                    try:
+                        return self.send(202,result)
+                    finally:
+                        app.service.start()
+                if path == '/api/service' and self.command == 'POST':
+                    action = data.get('action')
+                    if action in {'pause', 'resume'}:
+                        return self.send(200, app.worker.set_automatic_paused(action == 'pause'))
+                    if action not in {'restart','stop'}:
+                        raise ValueError('不支持的服务操作')
+                    if not self.administrator():
+                        return self.send(403, {'error': '重启或停止服务请在 Mac 本机操作'})
+                    result = app.service.request(action)
+                    try:
+                        return self.send(202, result)
+                    finally:
+                        app.service.start()
                 if path == '/api/config' and self.command == 'PUT':
                     old = app.settings.read()
                     exports = data.get('export', {})
-                    if (not self.local() and isinstance(exports, dict) and 'copy_directory' in exports
+                    if (not self.administrator() and isinstance(exports, dict) and 'copy_directory' in exports
                             and exports['copy_directory'] != old.get('export', {}).get('copy_directory', '')):
                         return self.send(403, {'error': '自动另存目录请在 Mac 本机修改'})
                     result = app.settings.update(data)
@@ -312,13 +436,13 @@ def make_handler(application):
                         app.worker.reset_attention()
                     return self.send(200, result)
                 if path == '/api/export-directory' and self.command == 'POST':
-                    if not self.local():
+                    if not self.administrator():
                         return self.send(403, {'error': '文件夹选择请在 Mac 本机操作'})
                     if data.get('action') != 'choose':
                         raise ValueError('请选择文件夹或填写本机路径')
                     return self.send(200, choose_export_directory())
                 if path == '/api/credentials':
-                    if not self.local():
+                    if not self.administrator():
                         return self.send(403, {'error': '账号凭证请仅在 Mac 本机配置'})
                     backend = app.credentials.set(data['kind'], data['value'])
                     app.invalidate_status_cache()
@@ -328,7 +452,7 @@ def make_handler(application):
                     app.worker.reset_attention()
                     return self.send(200, {'ok': True, 'backend': backend})
                 if path == '/api/connect-browser':
-                    if not self.local():
+                    if not self.administrator():
                         return self.send(403, {'error': '首次连接请在常开 Mac 上操作，之后手机可遥控'})
                     return self.send(202, app.worker.submit('connect_browser'))
                 if path == '/api/capture':
@@ -350,7 +474,7 @@ def make_handler(application):
                         raise ValueError('force 须为布尔值')
                     return self.send(202, app.worker.submit('render', data))
                 if path == '/api/import':
-                    if not self.local():
+                    if not self.administrator():
                         return self.send(403, {'error': '导入只能在 Mac 本机操作'})
                     source = Path(data['path']).resolve()
                     if not source.is_file() or source.suffix.lower() != '.json':
@@ -380,9 +504,11 @@ def main():
     app = Application(args.root, args.host, args.port)
     server = ThreadingHTTPServer((args.host, args.port), make_handler(app))
     server.daemon_threads = True
+    app.service.server = server
     app.worker.start()
     def stop(*_args):
-        app.worker.stop_event.set()
+        with app.worker.lock:
+            app.worker.draining = True
         threading.Thread(target=server.shutdown, daemon=True).start()
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
@@ -390,8 +516,18 @@ def main():
     try:
         server.serve_forever()
     finally:
+        # Finish every accepted job, including queued work, before releasing data.
+        with app.worker.lock:
+            app.worker.draining = True
+        app.worker.jobs.join()
+        app.worker.stop_event.set()
+        app.worker.thread.join()
         app.worker.persist()
         server.server_close()
+        app.process_lock.close()
+    if app.service.action == 'restart':
+        os.execv(sys.executable, [sys.executable, str(Path(__file__).resolve()),
+            '--root', str(app.root), '--host', args.host, '--port', str(args.port)])
 
 
 if __name__ == '__main__':

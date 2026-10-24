@@ -4,35 +4,21 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { createRequire } from 'node:module';
+import {loadPlaywright, browserOptions} from './browser_runtime.mjs';
 import { writePngGrid } from './png.mjs';
 
-const require = createRequire(import.meta.url);
 const input = path.resolve(process.argv[2] || '');
 const output = path.resolve(process.argv[3] || path.dirname(input));
 const RENDER_SCALE = Number(process.argv[4] || 1);
 const WIDTH = 1080, MAX_HEIGHT = 3600, MAX_CANVAS_WIDTH = 32000, MAX_CANVAS_PIXELS = 80_000_000;
 
-async function loadPlaywright() {
-  const candidates = [process.env.PLAYWRIGHT_MODULE,
-    path.join(os.homedir(), '.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.js')].filter(Boolean);
-  try { return require('playwright'); } catch {}
-  for (const candidate of candidates) {
-    try { const loaded=await import(pathToFileURL(candidate).href); return loaded.default || loaded; } catch {}
-  }
-  throw new Error('缺少 Playwright。请在工具目录运行 npm install playwright，然后运行 npx playwright install chromium。');
-}
 
 async function main() {
   if (![1,2].includes(RENDER_SCALE)) throw new Error('导出倍率仅支持 1× 或 2× HiDPI。');
   if (!fs.statSync(input).isFile()) throw new Error('稿件 HTML 不存在。');
   fs.mkdirSync(output, { recursive: true });
   const playwright = await loadPlaywright();
-  const executables = [process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
-    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-    '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'].filter(Boolean);
-  const executablePath = executables.find(candidate => fs.existsSync(candidate));
-  const browser = await playwright.chromium.launch({headless:true, ...(executablePath ? {executablePath} : {})});
+  const browser = await playwright.chromium.launch({headless:true, ...browserOptions(playwright)});
   try {
     const page = await browser.newPage({viewport:{width:3200,height:MAX_HEIGHT},deviceScaleFactor:RENDER_SCALE});
     await page.route('**/*', route => /^(file:|data:)/.test(route.request().url()) ? route.continue() : route.abort());

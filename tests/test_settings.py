@@ -96,6 +96,14 @@ class CredentialRecoveryTests(unittest.TestCase):
             self.assertEqual(self.credentials.get("discord"), "fictitious-environment")
         self.assertEqual(json.loads(self.credentials.path.read_text())["discord"], "fictitious-local")
 
+    def test_isolated_file_store_never_reads_or_writes_keychain(self):
+        with patch.dict(os.environ,{'DISCORD_ARCHIVE_CREDENTIAL_STORE':'file'}),patch('discord_archive.settings.subprocess.run') as command:
+            credentials=Credentials(self.root)
+            self.assertIsNone(credentials.get('discord'))
+            self.assertEqual(credentials.set('discord','synthetic-file-only'),'private_file')
+            self.assertEqual(credentials.get('discord'),'synthetic-file-only')
+            command.assert_not_called()
+
     def test_keychain_read_timeout_does_not_break_status(self):
         with patch('discord_archive.settings.subprocess.run', side_effect=subprocess.TimeoutExpired('security', 2)):
             self.assertIsNone(self.credentials.get('discord'))

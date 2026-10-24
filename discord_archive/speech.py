@@ -45,20 +45,33 @@ class SpeechArchive:
         if not model or not (model/'config.json').is_file():
             raise ValueError('未找到本机多语言 Whisper 模型，请在本机配置 speech.model_path 后重新出稿')
         config = json.loads((model/'config.json').read_text())
-        if config.get('n_vocab', 0) < 51865:
+        engine = self.options.get('engine') or ('faster-whisper' if (model/'model.bin').is_file() else 'mlx-whisper')
+        if engine not in {'mlx-whisper', 'faster-whisper'}:
+            raise ValueError('不支持的语音引擎')
+        multilingual = (len(config.get('lang_ids', [])) > 1 if engine == 'faster-whisper'
+            else config.get('n_vocab', 0) >= 51865)
+        if not multilingual:
             raise ValueError('当前 Whisper 是英文专用模型，请选择多语言模型')
-        weights = next((model/name for name in ('weights.safetensors','weights.npz') if (model/name).is_file()), None)
+        names = ('model.bin',) if engine == 'faster-whisper' else ('weights.safetensors','weights.npz')
+        weights = next((model/name for name in names if (model/name).is_file()), None)
         if not weights:
             raise ValueError('本机 Whisper 模型权重不完整')
         language = str(self.options.get('language') or 'zh')
         stamp = weights.stat()
-        descriptor = {'schema':1,'engine':'mlx-whisper','model':str(model.resolve()),
+        device = self.options.get('device', 'cpu')
+        compute_type = self.options.get('compute_type') or ('float16' if device == 'cuda' else 'int8')
+        if device not in {'cpu', 'cuda'} or compute_type not in {'int8', 'float32', 'float16', 'int8_float16'}:
+            raise ValueError('语音计算设备或精度配置无效')
+        cpu_threads = max(1, min(32, int(self.options.get('cpu_threads', min(4, os.cpu_count() or 1)))))
+        descriptor = {'schema':1,'engine':engine,'model':str(model.resolve()),
             'weights':str(weights.resolve()),'bytes':stamp.st_size,'mtime_ns':stamp.st_mtime_ns,
             'config':config,'language':language,'temperature':0,'condition_on_previous_text':False,
+            'device':device,'compute_type':compute_type,'cpu_threads':cpu_threads,
             'runner_sha256':hashlib.sha256((Path(__file__).resolve().parent.parent/'scripts/transcribe_local.py').read_bytes()).hexdigest()}
         fingerprint = hashlib.sha256(json.dumps(descriptor,sort_keys=True).encode()).hexdigest()
         return {'python':str(python.absolute()),'model':str(model.resolve()),'language':language,
-            'model_name':model.parent.parent.name.removeprefix('models--mlx-community--'), 'fingerprint':fingerprint}
+            'model_name':model.name if engine == 'faster-whisper' else model.parent.parent.name.removeprefix('models--mlx-community--'),
+            'engine':engine,'device':device,'compute_type':compute_type,'cpu_threads':cpu_threads,'fingerprint':fingerprint}
 
     def _asset(self, record, config):
         filename = record.get('file') or ''
@@ -114,6 +127,7 @@ class SpeechArchive:
             with tempfile.TemporaryDirectory(prefix='speech-',dir=self.directory) as temporary:
                 request = Path(temporary)/'request.json'
                 atomic_json(request,{'model':config['model'],'language':config['language'],
+                    **{key:config[key] for key in ('engine','device','compute_type','cpu_threads') if key in config},
                     'model_name':config['model_name'],'output':str(self.directory.absolute()),'assets':list(pending.values())})
                 environment = {key:value for key,value in os.environ.items()
                     if key not in {'DISCORD_ARCHIVE_TOKEN','ARCHIVE_MODEL_KEY','OPENAI_API_KEY'}}

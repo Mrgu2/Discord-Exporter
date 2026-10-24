@@ -15,6 +15,31 @@ from discord_archive.settings import Settings
 
 
 class ServerBoundaryTests(unittest.TestCase):
+    def test_connection_binding_cannot_be_called_by_remote_paired_browser(self):
+        self.app.sessions['valid']=9999999999
+        with patch('app.bind_connection') as bind:
+            handler=self.handler('/api/bind-discord',{'credential':'fixture_credential','expected_user_id':'9001'},host='192.168.1.4:8765',client='192.168.1.8')
+            handler.headers['Cookie']='archive_session=valid';handler.mutation()
+            self.assertEqual(handler.send.call_args.args[0],403);bind.assert_not_called()
+
+    def test_startup_and_power_are_local_only_with_explicit_power_confirmation(self):
+        self.app.service=Mock();self.app.service.action=None
+        self.app.startup=Mock();self.app.startup.set_enabled.return_value={'enabled':False}
+        self.app.invalidate_status_cache=Mock();self.app.sessions['valid']=9999999999
+        for path,body in [('/api/autostart',{'enabled':True}),('/api/host-power',{'action':'reboot','confirmation':'重启服务器'})]:
+            remote=self.handler(path,body,host='192.168.1.4:8765',client='192.168.1.8')
+            remote.headers['Cookie']='archive_session=valid';remote.mutation()
+            self.assertEqual(remote.send.call_args.args[0],403)
+        self.app.service.request.assert_not_called();self.app.startup.set_enabled.assert_not_called()
+        bad=self.handler('/api/host-power',{'action':'reboot','confirmation':'yes'});bad.mutation()
+        self.assertEqual(bad.send.call_args.args[0],400);self.app.service.request.assert_not_called()
+        bypass=self.handler('/api/service',{'action':'host-reboot'});bypass.mutation()
+        self.assertEqual(bypass.send.call_args.args[0],400);self.app.service.request.assert_not_called()
+        good=self.handler('/api/host-power',{'action':'reboot','confirmation':'重启服务器'});good.mutation()
+        self.assertEqual(good.send.call_args.args[0],202)
+        self.app.service.request.assert_called_once_with('host-reboot');self.app.service.start.assert_called_once()
+        startup=self.handler('/api/autostart',{'enabled':False});startup.mutation()
+        self.assertEqual(startup.send.call_args.args,(200,{'enabled':False}))
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory()
         self.root=Path(self.temp.name)
@@ -32,6 +57,22 @@ class ServerBoundaryTests(unittest.TestCase):
         handler.rfile=io.BytesIO(raw)
         handler.send=Mock()
         return handler
+
+    def test_service_controls_require_auth_csrf_and_local_for_process_actions(self):
+        self.app.service=Mock()
+        self.app.service.request.return_value={'action':'restart'}
+        self.app.sessions['valid']=9999999999
+        for action in ('pause','resume','restart','stop'):
+            remote=self.handler('/api/service',{'action':action},host='192.168.1.4:8765',client='192.168.1.8')
+            remote.mutation();self.assertEqual(remote.send.call_args.args[0],401)
+            remote.headers['Cookie']='archive_session=valid';remote.rfile.seek(0);remote.mutation()
+            self.assertEqual(remote.send.call_args.args[0],200 if action in ('pause','resume') else 403)
+            local=self.handler('/api/service',{'action':action});local.mutation()
+            self.assertEqual(local.send.call_args.args[0],200 if action in ('pause','resume') else 202)
+            bad=self.handler('/api/service',{'action':action});bad.headers['X-Archive-Key']='bad';bad.mutation()
+            self.assertEqual(bad.send.call_args.args[0],403)
+        self.assertEqual(self.app.service.request.call_count,2)
+        self.assertEqual(self.app.service.start.call_count,2)
 
     def test_remote_cannot_read_private_status_without_pairing(self):
         handler=self.handler('/api/status',host='192.168.1.4:8765',client='192.168.1.8',method='GET')
@@ -192,12 +233,14 @@ class StatusScalingTests(unittest.TestCase):
         full={'last_result':{'id':'fixture','scope':'day','evidence_url':'/evidence',
             'render_verification':{'large':'x'*100000},'draft':{'id':'fixture','render_verification':{'large':'x'*100000}},
             'single_columns':[{'title':'栏目','images':['/output/fixture.png'],'render_verification':{'large':'x'*100000}}]}}
+        self.app.service=Mock();self.app.service.status.return_value={}
         self.app.worker=Mock();self.app.worker.status.return_value=(copy.deepcopy(full),{})
         self.app.worker.media.stats.return_value={}
         self.app.store=Mock();self.app.store.list_runs.return_value=[];self.app.store.summary.return_value={}
         self.app.drafts=Mock();self.app.drafts.list_draft_page.return_value={'items':[{'id':'recent'}],'total':1000,'revision':'changed'}
         self.app.credentials=Mock();self.app.credentials.get.return_value='synthetic'
         self.app.settings=Mock();self.app.settings.read.return_value={};self.app.remote_addresses=Mock(return_value=[])
+        self.app.csrf='synthetic-request-key'
         self.app.code='synthetic-pairing-code'
         result=self.app.status(local=False)
         self.assertEqual(result['draft_count'],1000)

@@ -24,6 +24,7 @@ class Worker:
         self.jobs, self.stop_event = queue.Queue(), threading.Event()
         previous = json.loads(self.path.read_text()) if self.path.exists() else {}
         self.state = {
+            'automatic_paused': previous.get('automatic_paused', False),
             'status': 'idle', 'active_job': None, 'last_success_at': previous.get('last_success_at'),
             'last_heartbeat': utc_now(), 'last_slot': previous.get('last_slot'),
             'offline_since': previous.get('offline_since'), 'last_online_at': previous.get('last_online_at'),
@@ -47,6 +48,7 @@ class Worker:
         deadline = parse_time(self.state.get('rate_limit_until'))
         if deadline and deadline > datetime.now(timezone.utc):
             self.state['retry_at'] = deadline.isoformat()
+        self.draining = False
         self._queued_capture = False
         self._queued_auto_export = False
         self.auto_export = ScheduledExporter(root)
@@ -68,8 +70,32 @@ class Worker:
         self.thread = threading.Thread(target=self.loop, name='archive-worker', daemon=True)
         self.thread.start()
 
+    def set_automatic_paused(self, paused):
+        if type(paused) is not bool:
+            raise ValueError('暂停状态须为布尔值')
+        with self.lock:
+            if self.draining:
+                raise ValueError('服务正在重启或停止，请稍后操作')
+            previous = self.state.get('automatic_paused', False)
+            self.state['automatic_paused'] = paused
+            try:
+                self.persist()
+            except Exception:
+                self.state['automatic_paused'] = previous
+                raise
+        return {'automatic_paused': paused}
+
+    @staticmethod
+    def automatic_job(job):
+        return job['type'] == 'auto_export' or (job['type'] == 'capture' and
+            job['payload'].get('trigger') in {'scheduled', 'reconnect'})
+
     def submit(self, kind, payload=None):
         with self.lock:
+            if self.draining:
+                raise ValueError('服务正在重启或停止，请稍后操作')
+            if self.state.get('automatic_paused') and self.automatic_job({'type': kind, 'payload': payload or {}}):
+                raise ValueError('自动任务已暂停')
             if kind == 'auto_export' and self._queued_auto_export:
                 raise ValueError('已有定时出稿任务在进行或等待')
             if kind == 'render':
@@ -185,19 +211,21 @@ class Worker:
             if time.monotonic() >= next_schedule_check:
                 next_schedule_check = time.monotonic() + 10
                 try:
-                    config = self.settings.read()
-                    export_slot = self.auto_export.due(config,now)
-                    if self.credentials.get('discord') and any(row.get('enabled', True) for row in config.get('channels', [])) and not self.state.get('requires_attention'):
-                        retry = parse_time(self.state.get('retry_at'))
-                        slot = due(config, now, self.state.get('last_success_at'), self.state.get('last_slot'))
-                        ready_retry = retry and now >= retry
-                        allowed_schedule = slot and (not retry or now >= retry)
-                        if not self._queued_capture and not self._queued_auto_export and not self.state.get('active_job'):
-                            if export_slot and (not retry or now >= retry):
-                                self.submit('auto_export',{'slot':export_slot})
-                            elif ready_retry or allowed_schedule:
-                                self.submit('capture', {'trigger': 'reconnect' if ready_retry else 'scheduled', 'slot': slot})
-                    self.persist()
+                    with self.lock:
+                        if not self.draining and not self.state.get('automatic_paused'):
+                            config = self.settings.read()
+                            export_slot = self.auto_export.due(config,now)
+                            if self.credentials.get('discord') and any(row.get('enabled', True) for row in config.get('channels', [])) and not self.state.get('requires_attention'):
+                                retry = parse_time(self.state.get('retry_at'))
+                                slot = due(config, now, self.state.get('last_success_at'), self.state.get('last_slot'))
+                                ready_retry = retry and now >= retry
+                                allowed_schedule = slot and (not retry or now >= retry)
+                                if not self._queued_capture and not self._queued_auto_export and not self.state.get('active_job'):
+                                    if export_slot and (not retry or now >= retry):
+                                        self.submit('auto_export',{'slot':export_slot})
+                                    elif ready_retry or allowed_schedule:
+                                        self.submit('capture', {'trigger': 'reconnect' if ready_retry else 'scheduled', 'slot': slot})
+                            self.persist()
                 except Exception:
                     with self.lock:
                         self.state['last_error'] = '自动计划检查失败，请检查设置'
@@ -206,6 +234,13 @@ class Worker:
             except queue.Empty:
                 continue
             with self.lock:
+                if self.state.get('automatic_paused') and self.automatic_job(job):
+                    if job['type'] == 'capture':
+                        self._queued_capture = False
+                    else:
+                        self._queued_auto_export = False
+                    self.jobs.task_done()
+                    continue
                 self.state.update(status='running', active_job={'type': job['type'], 'id': job['id'],
                     **({key:job['payload'].get(key) for key in ('draft_id','target','render_scale')} if job['type'] == 'render' else {}),
                     'message': {'capture': '正在保存频道与回复上下文', 'auto_export': '正在保存并导出交易日稿件', 'draft': '正在生成稿件', 'render': '正在生成分栏图' if job['payload'].get('target') == 'mobile' else '正在生成高清主图', 'import': '正在导入存档', 'connect_browser': '请在新打开的 Discord 窗口中登录'}.get(job['type'], '处理中')})
@@ -282,6 +317,8 @@ class Worker:
             if due(config, candidate, state.get('last_success_at'), state.get('last_slot')):
                 next_time = candidate.isoformat()
                 break
-        state['next_capture_at'] = state.get('retry_at') or next_time
+        state['next_capture_at'] = None if state.get('automatic_paused') else state.get('retry_at') or next_time
+        if state.get('automatic_paused'):
+            state['auto_export']['next_at'] = None
         connectivity = {'online': None if not state.get('last_success_at') and not offline else not bool(offline), 'offline_since': state.get('offline_since'), 'last_online_at': state.get('last_online_at'), 'retry_at': state.get('retry_at'), 'gap_hours': round((now - offline).total_seconds() / 3600, 2) if offline else 0, 'last_error': state.get('last_error'), 'requires_attention': state.get('requires_attention')}
         return state, connectivity

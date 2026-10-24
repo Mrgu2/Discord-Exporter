@@ -25,7 +25,7 @@ def build_plist(root: Path, executable: str | None = None) -> dict:
     node = shutil.which("node")
     # A LaunchAgent does not inherit the interactive shell's PATH. Include only
     # executable directories needed for rendering, never the shell's secrets.
-    directories = ([str(Path(node).parent)] if node else []) + [
+    directories = [str(root / ".runtime" / "bin")] + ([str(Path(node).parent)] if node else []) + [
         str(Path(python).parent), "/opt/homebrew/bin", "/usr/local/bin",
         "/usr/bin", "/bin", "/usr/sbin", "/sbin",
     ]

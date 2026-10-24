@@ -9,6 +9,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -68,10 +69,12 @@ class BrowserLogin:
             return self._result("busy","已有登录窗口正在等待操作，请完成或关闭那个窗口。")
         candidate = None
         try:
+            if sys.platform.startswith('linux') and not os.environ.get('DISPLAY') and self.runner is None:
+                return self._result('error', '服务器没有登录显示窗口，请按 Linux 部署说明启用登录桌面，并通过 SSH 隧道访问。', code='display_missing')
             deadline = time.monotonic()+self.timeout
             node = self._node()
             if not node:
-                return self._result("error","连接需要 Node.js，请先安装后重试。",code="node_missing")
+                return self._result("error","连接需要 Node.js，请先双击 Install.command 后重试。",code="node_missing")
             profile = self.root/"data"/"browser-profile"
             profile.mkdir(parents=True,exist_ok=True,mode=0o700)
             os.chmod(profile,0o700)
@@ -87,7 +90,7 @@ class BrowserLogin:
             except subprocess.TimeoutExpired:
                 return self._result("timeout","登录等待已超时。请再次点击连接，在专用窗口中完成登录。")
             except (OSError,ValueError):
-                return self._result("error","无法打开专用登录窗口，请确认 Chrome 与 Node.js 已安装。",code="launch_failed")
+                return self._result("error","无法打开专用登录窗口，请先运行 Install.command 并完成安装检查。",code="launch_failed")
             try:
                 if len(completed.stdout or "") > 16384:
                     raise ValueError
@@ -102,7 +105,9 @@ class BrowserLogin:
             if status == "timeout":
                 return self._result("timeout","登录等待已超时。请再次点击连接，在专用窗口中完成登录。")
             if completed.returncode or status != "candidate":
-                return self._result("error","无法连接专用登录窗口，请确认 Chrome 可正常打开后重试。",code="browser_unavailable")
+                if payload.get("code") == "setup_required":
+                    return self._result("error", "登录浏览器环境不完整，请重新运行对应系统的安装入口后重试。", code="setup_required")
+                return self._result("error","无法连接专用登录窗口，请重新运行 Install.command 检查浏览器，完成后重试。",code="browser_unavailable")
             candidate = payload.get("token")
             # Discard the credential-bearing subprocess strings as soon as the
             # candidate has been copied into the narrow verification path.

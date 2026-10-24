@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One offline MLX batch. Read only local audio/model; publish each clip atomically."""
+"""One offline MLX or CTranslate2 batch; publish each local clip atomically."""
 import hashlib
 import json
 import os
@@ -16,10 +16,20 @@ from discord_archive.settings import atomic_json
 def main(request_path):
     request = json.loads(Path(request_path).read_text())
     model = Path(request['model'])
-    if not model.is_dir() or not (model/'config.json').is_file() or not any((model/name).is_file() for name in ('weights.npz','weights.safetensors')):
+    engine = request.get('engine', 'mlx-whisper')
+    names = ('model.bin',) if engine == 'faster-whisper' else ('weights.npz','weights.safetensors')
+    if not model.is_dir() or not (model/'config.json').is_file() or not any((model/name).is_file() for name in names):
         raise ValueError('Only an existing local model is allowed')
-    import mlx_whisper
     import numpy as np
+    if engine == 'faster-whisper':
+        from faster_whisper import WhisperModel
+        recognizer = WhisperModel(str(model), device=request.get('device', 'cpu'),
+            compute_type=request.get('compute_type', 'int8'), cpu_threads=request.get('cpu_threads', 4),
+            local_files_only=True)
+    elif engine == 'mlx-whisper':
+        import mlx_whisper
+    else:
+        raise ValueError('Unsupported speech engine')
     output = Path(request['output'])
     completed,failed = 0,0
     for asset in request['assets']:
@@ -37,8 +47,15 @@ def main(request_path):
             samples = np.frombuffer(decoded.stdout,dtype=np.float32).copy()
             if not len(samples) or len(samples) >= 1800*16000:
                 raise ValueError('Empty or over-30-minute audio; do not publish a truncated transcript')
-            result = mlx_whisper.transcribe(samples,path_or_hf_repo=str(model),language=request['language'],task='transcribe',
-                verbose=None,temperature=0,condition_on_previous_text=False)
+            if engine == 'faster-whisper':
+                found, info = recognizer.transcribe(samples, language=request['language'], task='transcribe',
+                    beam_size=5, temperature=0, condition_on_previous_text=False)
+                result = {'language':info.language, 'segments':[
+                    {key:getattr(segment,key) for key in ('start','end','text','avg_logprob','no_speech_prob')}
+                    for segment in found]}
+            else:
+                result = mlx_whisper.transcribe(samples,path_or_hf_repo=str(model),language=request['language'],task='transcribe',
+                    verbose=None,temperature=0,condition_on_previous_text=False)
             segments = [{key:segment.get(key) for key in ('start','end','text','avg_logprob','no_speech_prob')}
                 for segment in result.get('segments',[]) if str(segment.get('text') or '').strip()]
             # Segment line breaks aid reading without inventing punctuation or
@@ -46,7 +63,7 @@ def main(request_path):
             text = '\n'.join(segment['text'].strip() for segment in segments).strip()
             receipt = {'status':'complete','text':text,'segments':segments,'language':result.get('language',request['language']),
                 'audio_sha256':asset['audio_sha256'],'model_fingerprint':asset['model_fingerprint'],
-                'model':request['model_name'],'engine':'mlx-whisper','duration_seconds':len(samples)/16000,
+                'model':request['model_name'],'engine':engine,'duration_seconds':len(samples)/16000,
                 'elapsed_seconds':round(time.perf_counter()-started,4)}
             atomic_json(output/f'{asset["key"]}.json',receipt)
             completed += 1

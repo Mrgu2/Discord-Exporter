@@ -11,6 +11,10 @@
   let fetching = false;
   let toastTimer;
   let serviceFailedAt = null;
+  let serviceInstance = null;
+  let serviceAction = null;
+  let serviceRequest = false;
+  let startupRequest = false;
   let pendingAction = null;
   let lastDraftSignature = '';
   let currentView = 'workspace';
@@ -29,7 +33,9 @@
   let draftDatesTouched = false;
   let savingChannels = false;
   let loginRequired = false;
-  const isLocal = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(location.hostname);
+  let onboardingEditing = false;
+  // UI capability only; the server independently authorizes every operation.
+  let isLocal = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(location.hostname);
   const autoExportDefaults = { enabled: false, times: ['16:15'], weekdays: [0, 1, 2, 3, 4], render_scales: [1], layout: 'horizontal', presentation: 'reading', target: 'main' };
   const exportDefaults = { name_prefix: '答疑存档', date_format: 'YYYY-MM-DD', sequence_digits: 2, separator: '-', copy_directory: '' };
   function displayTimezone() { return publicConfig.timezone && publicConfig.timezone !== 'auto' ? publicConfig.timezone : Intl.DateTimeFormat().resolvedOptions().timeZone; }
@@ -90,12 +96,26 @@
     toast.hidden = false;
     toastTimer = setTimeout(() => { toast.hidden = true; }, isError ? 8500 : 4500);
   }
-  async function api(path, options = {}) {
+  async function refreshRequestKey() {
+    const response = await fetch('/', { cache: 'no-store', credentials: 'same-origin' });
+    if (!response.ok) throw new Error('暂时无法连接本机，请稍后重试。');
+    const page = new DOMParser().parseFromString(await response.text(), 'text/html');
+    const key = page.querySelector('meta[name="archive-key"]')?.content;
+    if (!key || key === '__ARCHIVE_KEY__') throw new Error('连接信息未就绪，请稍后重试。');
+    document.querySelector('meta[name="archive-key"]').content = key;
+  }
+  async function api(path, options = {}, retryKey = true) {
     const mutation = options.method && !['GET', 'HEAD'].includes(options.method.toUpperCase());
     const csrfKey = document.querySelector('meta[name="archive-key"]')?.content;
     const response = await fetch(path, { cache: 'no-store', credentials: 'same-origin', ...options, headers: { ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...(mutation && csrfKey ? { 'X-Archive-Key': csrfKey } : {}), ...options.headers } });
     let body;
     try { body = await response.json(); } catch { body = null; }
+    // Only retry a request explicitly rejected before any mutation ran.
+    if (response.status === 403 && body?.code === 'csrf_expired' && mutation && retryKey) {
+      await refreshRequestKey();
+      return api(path, options, false);
+    }
+    if (response.ok && body?.archive_key) document.querySelector('meta[name="archive-key"]').content = body.archive_key;
     if (response.status === 401 && path !== '/api/login') { loginRequired = true; $('login-overlay').hidden = false; document.querySelector('.app-shell').inert = true; $('access-code').focus(); }
     if (!response.ok) { const error = new Error(body?.error?.message || (typeof body?.error === 'string' ? body.error : null) || body?.message || `请求失败（${response.status}）`); error.status = response.status; throw error; }
     return body || {};
@@ -182,6 +202,14 @@
   }
   async function chooseExportDirectory() {
     if (!isLocal) return;
+    if (snapshot?.platform?.system === 'linux') {
+      const path = window.prompt('输入 Linux 服务器上的目录绝对路径', $('export-copy-directory').value);
+      if (path !== null) {
+        $('export-copy-directory').value = path.trim();
+        settingsDirty = true; text('config-save-status', '有未保存的设置。');
+      }
+      return;
+    }
     const button = $('export-directory-choose');
     button.disabled = true; button.textContent = '正在选择…';
     try {
@@ -195,8 +223,9 @@
   }
   function renderAutoExportState(state) {
     const autoExport = state.auto_export || {};
+    const paused = state.automatic_paused;
     const enabled = autoExport.enabled ?? publicConfig.auto_export?.enabled ?? false;
-    text('auto-export-next', enabled ? autoExport.next_at ? dateTime(autoExport.next_at, true) : '等待计划' : '未启用');
+    text('auto-export-next', paused ? '已暂停' : enabled ? autoExport.next_at ? dateTime(autoExport.next_at, true) : '等待计划' : '未启用');
     const stages = { capture: '正在保存频道', capture_partial: '频道保存未完整', draft: '正在整理稿件', render: '正在生成图片', copy: '正在另存文件' };
     const failedStages = { capture: '频道保存未完成', capture_partial: '频道保存未完整', draft: '稿件整理未完成', render: '图片生成未完成', copy: '文件另存未完成' };
     const statuses = { ...statusNames, idle: '尚未执行', skipped: '该交易日无可导出发言', paused: '已暂停', disabled: '未启用' };
@@ -214,12 +243,21 @@
     else link.removeAttribute('href');
   }
   function renderState(data) {
+    isLocal = ['localhost','127.0.0.1','::1','[::1]'].includes(location.hostname) || data.remote?.administrator === true;
     remoteRenderJobs = data.state?.render_jobs || [];
     snapshot = data;
+    if (data.platform?.system === 'linux') {
+      document.querySelector('label[for="export-copy-directory"]').textContent = '自动另存目录（Linux 服务器）';
+      $('export-directory-choose').textContent = '填写服务器目录';
+      $('export-copy-directory').placeholder = '/home/用户名/图片目录';
+      document.querySelector('#credentials-section .form-help').textContent = '通过 SSH 隧道连接服务器后配置，页面不显示已保存的值。';
+      document.querySelector('#service-more .form-help').textContent = '停止后访问会断开。在服务器执行 systemctl --user start discordarchive 可重新启动，数据保留。';
+    }
     const config = data.config || publicConfig;
     hydrateConfig(config);
     const state = data.state || {};
     renderAutoExportState(state);
+    renderServiceControls(data);
     if (state.market_day && !draftDatesTouched) {
       for (const id of ['draft-date', 'draft-start', 'draft-end']) $(id).value = state.market_day;
     }
@@ -234,11 +272,39 @@
     const runningRun = runs.find((run) => busyStatuses.has(run.status));
     const busy = Boolean(currentJob || state.running || state.capture_running || runningRun || pendingAction || state.queue_length);
     const discordCredential = first(credentials.discord, credentials.has_discord, state.has_discord_token, config.discord_token_configured);
+    const linuxBinding=data.platform?.system==='linux';
+    const localHelper=Boolean(data.connection_helper?.available);
+    const helperBinding=Boolean(data.remote?.https_url)||localHelper;
+    $('linux-binding').hidden=!(linuxBinding||localHelper) || !isLocal;
+    $('helper-downloads').hidden=!helperBinding;
+    $('legacy-binding').hidden=helperBinding;
+    $('windows-helper-download').hidden=localHelper&&!linuxBinding;
+    $('connect-browser-fallback').hidden=!linuxBinding || !isLocal || !data.platform?.login_desktop;
+    $('connect-browser-fallback').disabled=busy;
+    if (linuxBinding) {
+      const root=String(data.system?.binding_root || '/服务器项目目录').replaceAll("'", "'\\''");
+      text('linux-binding-command',`python3 scripts/bind_linux.py --ssh-file .env.ssh.local --remote-root '${root}'`);
+    }
     const modelCredential = first(credentials.model, credentials.has_model, state.has_model_key, config.model_key_configured);
     const allChannels = Array.isArray(config.channels) ? config.channels : [];
     const channels = allChannels.filter((channel) => typeof channel === 'string' || channel.enabled !== false);
     const configured = Boolean(channels.length && (config.target_author_id || config.target_message_url) && discordCredential !== false);
-    $('setup-alert').hidden = true;
+    const needsChannels = !allChannels.length;
+    const needsAuthor = !(config.target_author_id || config.target_message_url);
+    $('setup-alert').hidden = !isLocal || (!needsChannels && !needsAuthor);
+    text('setup-step', discordCredential === false ? '首次使用：先连接 Discord，再添加频道与答疑人。' : needsChannels ? '下一步：添加要保存的频道和答疑人。' : '下一步：指定要整理的答疑人。');
+    text('setup-action', discordCredential === false ? localHelper ? '首次连接 Discord' : linuxBinding ? helperBinding ? '首次连接 Discord' : '本机登录后绑定' : '连接 Discord' : needsChannels ? '添加频道与答疑人' : '指定答疑人');
+    $('setup-action').disabled = busy;
+    $('setup-save').hidden = !isLocal || (!needsChannels && !needsAuthor);
+    $('setup-save').disabled = busy;
+    $('setup-action').onclick = () => {
+      if (discordCredential === false) { $('connect-browser-button').click(); return; }
+      onboardingEditing = true;
+      $('advanced-settings').open = true;
+      const field = $(needsChannels ? 'channels' : 'target-message-url');
+      field.scrollIntoView({block:'center'});
+      field.focus();
+    };
     text('capture-badge', busy ? '正在处理' : `${channels.length} 个已选`);
     $('capture-button').disabled = busy || !channels.length || discordCredential === false;
     $('draft-button').disabled = busy || !channels.length || archive.message_count === 0 || ($('draft-layout').value === 'qa' && !(config.target_author_id || config.target_message_url));
@@ -252,7 +318,7 @@
     text('last-success', lastSuccess ? dateTime(lastSuccess, true) : '尚未保存');
     text('last-success-detail', lastSuccess ? `${relative(lastSuccess)} · ${displayTimezone()}` : '保存成功后在这里显示');
     const next = first(state.next_capture_at, state.next_run_at, state.next_scheduled_at, data.next_capture_at, config.schedule?.next_run_at);
-    text('next-capture', config.schedule?.enabled ? discordCredential === false ? '连接后开始' : next ? dateTime(next, true) : '等待下一轮' : '未启用');
+    text('next-capture', state.automatic_paused ? '已暂停' : config.schedule?.enabled ? discordCredential === false ? '连接后开始' : next ? dateTime(next, true) : '等待下一轮' : '未启用');
     const fixedTimes = Array.isArray(config.schedule?.times) ? config.schedule.times.join('、') : config.schedule?.times;
     text('schedule-detail', config.schedule?.enabled ? `每 ${config.schedule.interval_minutes || 360} 分钟${fixedTimes ? ` · ${fixedTimes}` : ''}${config.schedule.window?.enabled ? ' · 尾盘密集保存' : ''} · 跟随美股交易时间` : '仍可随时手动保存');
     const connected = first(connectivity.online, connectivity.connected, state.online);
@@ -268,6 +334,11 @@
     $('connection-detail').hidden = !(connectingBrowser || needsAttention || isOffline || discordCredential === false);
     $('connect-browser-button').disabled = busy || !isLocal;
     $('connect-browser-button').querySelector('span').textContent = !isLocal ? '请在 Mac 上连接' : connectingBrowser ? '正在连接…' : discordCredential ? '重新连接 Discord' : '连接 Discord';
+    if ((linuxBinding||localHelper) && isLocal && !connectingBrowser) {
+      $('connect-browser-button').querySelector('span').textContent=discordCredential ? (helperBinding ? '账号说明' : '重新绑定账号') : helperBinding ? '首次连接 Discord' : '本机登录后绑定';
+      if(helperBinding)text('connection-detail',discordCredential?(localHelper?'此 Mac 已保存连接，可独立采集。':'Ubuntu 已保存连接，可独立采集；换电脑直接访问，无需重新绑定。'):'先下载客户端并运行首次连接工具，再在日常 Discord 页面识别并确认账号。');
+      if (discordCredential===false && !helperBinding) text('connection-detail','在 Mac 本机登录后，经 SSH 绑定此服务器。绑定后可独立运行，VNC 仅作备用。');
+    }
     const offlineSince = first(connectivity.offline_since, state.offline_since);
     const offlineSeconds = first(connectivity.offline_seconds, state.offline_seconds);
     text('offline-duration', lastSuccess ? elapsed(lastSuccess) : offlineSeconds !== undefined ? duration(offlineSeconds) : offlineSince ? elapsed(offlineSince) : '尚无成功记录');
@@ -281,7 +352,7 @@
     text('capture-gap', !lastSuccess ? '尚未建立基线' : Number(archive.coverage_gap_count) > 0 ? `${archive.coverage_gap_count} 段留存风险待核对` : continuityRisk === true || Number(gapHours) >= 48 ? '可能跨过清理周期' : continuityRisk === false ? '未发现清理周期风险' : gapHours !== undefined ? Number(gapHours) === 0 ? '无' : `${Number(gapHours).toFixed(1)} 小时待核对` : gapSeconds !== undefined ? `${duration(gapSeconds)}待核对` : Array.isArray(gaps) ? `${gaps.length} 段待核对` : gaps !== undefined ? String(gaps) : '尚未检测');
     const attachmentFailures = first(archive.attachment_failures, archive.failed_attachments, state.attachment_failures, connectivity.attachment_failures);
     text('attachment-failures', attachmentFailures === undefined ? '—' : `${number(Array.isArray(attachmentFailures) ? attachmentFailures.length : attachmentFailures)} 个`);
-    text('recovery-state', needsAttention ? '自动重试暂停，请处理凭证或频道权限' : busy && first(state.backfilling, connectivity.backfilling) ? '正在补采断线期间的消息' : isOffline ? '保存暂停，服务会持续重试' : lastSuccess ? '保存记录已更新，等待下一轮' : '首次保存后开始追踪连续性');
+    text('recovery-state', state.automatic_paused ? '自动任务已暂停，仍可手动保存和出稿' : needsAttention ? '自动重试暂停，请处理凭证或频道权限' : busy && first(state.backfilling, connectivity.backfilling) ? '正在补采断线期间的消息' : isOffline ? '保存暂停，服务会持续重试' : lastSuccess ? '保存记录已更新，等待下一轮' : '首次保存后开始追踪连续性');
     const lastError = first(state.last_job_error, connectivity.last_error, state.last_error, data.last_error, state.target_resolution_warning, state.last_warning);
     $('last-error').hidden = !lastError;
     if (lastError) text('last-error', typeof lastError === 'string' ? lastError : lastError.message || '上一轮未成功，请查看保存记录。');
@@ -295,7 +366,7 @@
     const storageName = {keychain:'钥匙串',private_file:'本机受限文件'}[state.browser_account?.credential_backend];
     text('discord-credential-status', discordCredential === undefined ? '未检测' : discordCredential ? `已保存${storageName ? ` · ${storageName}` : ''}` : '未配置');
     text('model-credential-status', modelCredential === undefined ? '未检测' : modelCredential ? '已保存' : '未配置');
-    text('service-caption', '本机运行中');
+    text('service-caption', serviceAction ? serviceAction.startsWith('host-') ? '正在处理服务器电源操作' : serviceAction === 'restart' ? '正在重启服务' : '正在停止服务' : state.automatic_paused ? '自动任务已暂停' : data.platform?.system==='linux' ? '服务器运行中' : '本机运行中');
     renderRemote(data.remote || {});
     text('last-updated', `状态更新于 ${dateTime(new Date(), true)}`);
     renderDrafts();
@@ -331,8 +402,18 @@
     } catch (error) { showToast(error.message, true); }
     finally { savingChannels = false; document.activeElement?.blur(); await refresh(); }
   }
-  async function connectBrowser() {
+  async function connectBrowser({fallback=false}={}) {
     if (!isLocal) return;
+    if ((snapshot?.platform?.system==='linux'||snapshot?.connection_helper?.available) && !fallback) {
+      $('advanced-settings').open=true;
+      $('linux-binding').scrollIntoView({block:'center'});
+      if(snapshot?.remote?.https_url||snapshot?.connection_helper?.available)$('helper-downloads').querySelector('a').focus();
+      else $('linux-binding-command').focus();
+      return;
+    }
+    if (snapshot?.platform?.system === 'linux' && snapshot.platform.login_desktop) {
+      window.open('http://127.0.0.1:6080/vnc.html?autoconnect=1&resize=scale', '_blank', 'noopener');
+    }
     pendingAction = 'connect';
     $('connect-browser-button').disabled = true;
     $('connect-browser-button').querySelector('span').textContent = '正在连接…';
@@ -399,6 +480,25 @@
       const url = typeof value === 'string' ? value : value.url;
       const link = node('a', 'remote-link', url); link.href = url; link.target = '_blank'; link.rel = 'noopener'; return link;
     }) : [node('p', 'form-help', '尚无局域网地址。请确认这台 Mac 已连接网络并启用局域网访问。')]));
+    if (snapshot?.platform?.system === 'linux' && remote.access && !remote.https_url) {
+      const access = remote.access;
+      $('remote-urls').closest('.settings-section').querySelector('h2').textContent = '以后如何访问';
+      const addresses = Array.isArray(access.server_addresses) ? access.server_addresses.join('、') : '';
+      $('remote-urls').replaceChildren(
+        node('p', '', addresses ? `服务器私有 IP：${addresses}` : '未检测到服务器私有 IP，请在服务器执行 ip -4 address 核对。'),
+        node('p', 'form-help', access.loopback_only
+          ? '当前仅监听服务器本机。上述 IP 用于 SSH 连接，不能直接加 :8765 打开工作台。'
+          : `当前监听 ${access.listen_host}:${access.listen_port}，请核对私有网络与访问口令设置。`),
+        node('p', 'form-help', '以后使用：跨网络时先连 Tailscale 或同类私有网络，再建立 SSH 隧道，打开 http://127.0.0.1:18765。关闭隧道后需重新连接；服务和数据仍保留。'),
+        node('p', 'form-help', access.tailscale_installed
+          ? '检测到 Tailscale 程序；请自行确认服务器和访问设备均已连接且策略允许。'
+          : '未检测到 Tailscale。相同局域网可直接建立 SSH 隧道；跨网络先配置私有网络，不开放公网端口。')
+      );
+    }
+    if(remote.https_url){
+      $('remote-urls').closest('.settings-section').querySelector('h2').textContent='以后如何访问';
+      $('remote-urls').append(node('p','form-help','保持 Tailscale 在线，收藏上方 HTTPS 地址即可。不需要 SSH 隧道；由获准的 Tailscale 账号管理。'));
+    }
     $('remote-code-block').hidden = !isLocal || !remote.access_code;
     text('remote-code', isLocal && remote.access_code ? remote.access_code : '');
   }
@@ -578,19 +678,121 @@
       return row;
     }));
   }
+  function renderServiceControls(data) {
+    const service = data.service || {};
+    $('service-more').querySelector('p').textContent=data.platform?.system==='linux'?'停止后 HTTPS 工作台断开。通过 SSH 执行 systemctl --user start discordarchive.service 可恢复；归档、稿件和模型保留。':'停止后网页和手机访问断开。再次打开 Mac App 或 Start.command 可启动，归档、稿件和凭证均保留。';
+    serviceAction = service.action || (service.error ? null : serviceAction);
+    const paused = Boolean(data.state?.automatic_paused);
+    text('service-pause', paused ? '恢复自动任务' : '暂停自动任务');
+    text('service-control-status', service.error || (serviceAction
+      ? `${({'restart':'重启服务','stop':'停止服务','host-reboot':'重启服务器','host-poweroff':'关闭服务器'})[serviceAction] || '服务操作'}：等待已接受的任务结束，然后执行。`
+      : paused ? '自动任务已暂停，仍可手动保存和出稿。' : '服务运行中'));
+    $('service-pause').disabled = serviceRequest || Boolean(serviceAction);
+    for (const id of ['service-restart', 'service-stop']) {
+      $(id).hidden = !isLocal;
+      $(id).disabled = serviceRequest || startupRequest || Boolean(serviceAction) || service.available === false;
+    }
+    $('service-more').hidden = !isLocal;
+    $('service-local-note').hidden = isLocal;
+    const startup=data.system?.startup;
+    $('startup-controls').hidden=!isLocal || !startup;
+    if (startup) {
+      text('startup-label', data.platform?.system === 'linux' && startup.scope === 'boot' ? '开机后自动运行' : '登录后自动运行');
+      if (!startupRequest) $('startup-enabled').checked=Boolean(startup.enabled);
+      $('startup-enabled').disabled=startupRequest || !startup.available || Boolean(serviceAction);
+      text('startup-note',startupRequest ? '正在保存系统启动设置…' : startup.note || '关闭开关不会停止当前服务。');
+    }
+    const power=data.system?.power;
+    $('host-power-controls').hidden=!isLocal || !power?.supported;
+    for (const action of ['reboot','poweroff']) {
+      $('host-'+action).disabled=!power?.[action] || serviceRequest || startupRequest || Boolean(serviceAction);
+    }
+    text('host-power-note',power?.note || '需要输入对应操作的确认文字，不会强制中断本应用任务。');
+  }
+  async function changeStartup() {
+    if (!isLocal || startupRequest) return;
+    const enabled=$('startup-enabled').checked;
+    startupRequest=true;renderServiceControls(snapshot || {});
+    try {
+      const result=await post('/api/autostart',{enabled});
+      if (snapshot) { snapshot.system ||= {};snapshot.system.startup=result; }
+      showToast(enabled ? '自动启动已开启，当前服务继续运行。' : '自动启动已关闭，当前服务继续运行。');
+    } catch(error) { showToast(error.message,true); }
+    finally {startupRequest=false;renderServiceControls(snapshot || {});await refresh();}
+  }
+  async function controlHostPower(action) {
+    if (!isLocal || serviceRequest || startupRequest || serviceAction) return;
+    if (settingsDirty) {showToast('请先保存设置，再操作服务器电源。',true);return;}
+    const label=action==='reboot'?'重启服务器':'关闭服务器';
+    const hostname=snapshot?.system?.hostname || '';
+    const address=snapshot?.remote?.access?.server_addresses?.[0] || '';
+    const target=hostname && address ? `${hostname} (${address})` : hostname || address || '当前服务器';
+    const manualStart=action==='reboot' && snapshot?.system?.startup?.enabled===false ? '当前未开启自动启动，重启后需登录服务器手动启动本应用。' : '';
+    const confirmation=window.prompt(`目标：${target}\n${label}将影响整台服务器及其他程序。等待本应用任务结束后执行。${action==='poweroff'?'关机后需从主机或虚拟机管理工具开机。':'重启后需等待服务器上线并重新建立 SSH 隧道。'}${manualStart}\n输入“${label}”确认：`);
+    if (confirmation!==label) {
+      if (confirmation!==null) showToast('确认文字不匹配，未执行服务器电源操作。',true);
+      return;
+    }
+    serviceRequest=true;renderServiceControls(snapshot || {});
+    try {await post('/api/host-power',{action,confirmation});serviceAction='host-'+action;}
+    catch(error){showToast(error.message,true);}
+    finally {serviceRequest=false;await refresh();}
+  }
+  async function controlService(action) {
+    if (serviceRequest || startupRequest || serviceAction) return;
+    if (['restart', 'stop'].includes(action)) {
+      if (settingsDirty) { showToast('请先保存设置，再操作服务。', true); return; }
+      if (!window.confirm(action === 'stop'
+        ? (snapshot?.platform?.system === 'linux' ? '停止本应用后网页将断开。可在服务器执行 systemctl --user start discordarchive.service 恢复；自动启动偏好保留。等待已有任务结束后停止？' : '停止服务后，网页和手机访问将断开，登录服务的自动拉起也会暂停。再次打开 Mac App 或 Start.command 可恢复。等待已有任务结束后停止？')
+        : '等待已有任务结束后重启服务？页面会自动重新连接。')) return;
+    }
+    serviceRequest = true;
+    renderServiceControls(snapshot || {});
+    try {
+      const result = await post('/api/service', { action });
+      if (action === 'pause' || action === 'resume') {
+        if (snapshot) snapshot.state.automatic_paused = result.automatic_paused;
+        showToast(action === 'pause' ? '自动任务已暂停，正在执行的任务会正常完成。' : '自动任务已恢复。');
+      } else serviceAction = action;
+      await refresh();
+    } catch (error) { showToast(error.message, true); }
+    finally { serviceRequest = false; renderServiceControls(snapshot || {}); }
+  }
+  let authorizationShown=false;
   async function refresh() {
     if (fetching) return;
     fetching = true;
     try {
       const data = await api('/api/status');
+      if (serviceInstance && data.service?.instance && serviceInstance !== data.service.instance) {
+        serviceAction = null;
+        lastJobSeen = null;
+      }
+      serviceInstance = data.service?.instance || serviceInstance;
       serviceFailedAt = null;
       $('connection-alert').hidden = true;
       renderState(data);
+      const requestId=new URLSearchParams(location.search).get('authorize');
+      if(requestId && data.remote?.administrator && !authorizationShown){
+        authorizationShown=true;
+        try{
+          const info=await api('/api/helper/authorization?id='+encodeURIComponent(requestId));
+          text('helper-device','设备：'+info.device);text('helper-server','服务器：'+location.origin);
+          $('helper-authorization').showModal();
+          $('helper-approve').onclick=async()=>{
+            $('helper-approve').disabled=true;
+            try{await post('/api/helper/approve',{request_id:requestId});text('helper-authorization-status','已允许连接。请回到助手完成 Discord 登录和账号确认。');}
+            catch(e){text('helper-authorization-status',e.message);$('helper-approve').disabled=false;}
+          };
+          $('helper-cancel').onclick=()=>$('helper-authorization').close();
+        }catch(e){showToast(e.message,true);}
+      }
+
     } catch (error) {
       if (error.status === 401) { $('connection-alert').hidden = true; return; }
       if (!serviceFailedAt) serviceFailedAt = Date.now();
       $('connection-alert').hidden = false;
-      $('connection-alert').textContent = `本地服务连接中断，页面会自动重连。中断时长：${duration((Date.now() - serviceFailedAt) / 1000)}。`;
+      $('connection-alert').textContent = serviceAction?.startsWith('host-') ? (serviceAction==='host-reboot' ? '服务器正在重启。等待上线并恢复 Tailscale 后，当前页面会自动重新连接。' : '服务器已关闭。需要从主机或虚拟机管理工具开机。') : serviceAction === 'stop' ? (snapshot?.platform?.system==='linux'?'服务已断开。在服务器执行 systemctl --user start discordarchive.service 可启动。':'服务已断开。再次打开 Mac App 或 Start.command 可启动。') : serviceAction === 'restart' ? '服务正在重启，页面会自动重新连接。若长时间未恢复，请检查服务状态。' : `本地服务连接中断，页面会自动重连。中断时长：${duration((Date.now() - serviceFailedAt) / 1000)}。`;
       text('service-caption', '暂时无法连接本机');
       $('capture-button').disabled = true;
       $('draft-button').disabled = true;
@@ -624,6 +826,7 @@
   async function saveConfig(event) {
     event.preventDefault();
     const button = $('config-save-button');
+    if (button.disabled) return;
     try {
       const timezone = $('timezone').value.trim();
       if (timezone !== 'auto') { try { new Intl.DateTimeFormat('zh-CN', { timeZone: timezone }); } catch { throw new Error('时间显示设置无效，请重新选择。'); } }
@@ -677,6 +880,12 @@
       text('config-save-status', '设置已保存。');
       showToast('设置已保存，自动计划将使用新配置。');
       await refresh();
+      if (onboardingEditing) {
+        onboardingEditing = false;
+        $('advanced-settings').open = false;
+        $('capture-button').scrollIntoView({block:'center'});
+        $('capture-button').focus();
+      }
     } catch (error) { showToast(error.message, true); text('config-save-status', '未保存，请检查填写内容。'); }
     finally { button.disabled = false; button.textContent = '保存设置'; }
   }
@@ -762,7 +971,8 @@
     if (snapshot) {
       const connectivity = snapshot.connectivity || snapshot.state?.connectivity || {};
       const retryAt = first(connectivity.retry_at, connectivity.next_retry_at, snapshot.state?.retry_at, snapshot.state?.next_retry_at);
-      if (retryAt) text('retry-countdown', countdown(retryAt));
+      if (snapshot.state?.automatic_paused) text('retry-countdown', '已暂停');
+      else if (retryAt) text('retry-countdown', countdown(retryAt));
       const lastSuccess = first(snapshot.state?.last_success_at, snapshot.state?.last_capture_success_at, snapshot.state?.last_success, snapshot.state?.last_capture_at, connectivity.last_success_at);
       if (lastSuccess) text('offline-duration', elapsed(lastSuccess));
     }
@@ -770,9 +980,16 @@
 
   document.querySelectorAll('[data-view]').forEach((button) => button.addEventListener('click', () => setView(button.dataset.view)));
   document.querySelectorAll('[data-go]').forEach((button) => button.addEventListener('click', () => setView(button.dataset.go)));
+  $('service-pause').addEventListener('click', () => controlService(snapshot?.state?.automatic_paused ? 'resume' : 'pause'));
+  $('service-restart').addEventListener('click', () => controlService('restart'));
+  $('service-stop').addEventListener('click', () => controlService('stop'));
+  $('startup-enabled').addEventListener('change',changeStartup);
+  $('host-reboot').addEventListener('click',()=>controlHostPower('reboot'));
+  $('host-poweroff').addEventListener('click',()=>controlHostPower('poweroff'));
   $('refresh-button').addEventListener('click', refresh);
   $('capture-button').addEventListener('click', capture);
   $('connect-browser-button').addEventListener('click', connectBrowser);
+  $('connect-browser-fallback').addEventListener('click',()=>connectBrowser({fallback:true}));
   $('draft-form').addEventListener('submit', createDraft);
   document.querySelectorAll('input[name="scope"]').forEach((input) => input.addEventListener('change', changeScope));
   $('draft-mode').addEventListener('change', updateMode);

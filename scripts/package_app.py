@@ -20,8 +20,11 @@ APP_NAME = "Discord Archive.app"
 ZIP_ROOT = "DiscordArchive"
 # Deliberately enumerate public source files; never walk data or the project root.
 SOURCE_ALLOWLIST = (
-    "README.md", ".gitignore", "app.py",
-    "discord_archive/__init__.py", "discord_archive/assets.py",
+    "README.md", ".gitignore", "app.py", "package.json", "package-lock.json",
+    "Install.command", "Start.command", "Install-Speech.command",
+    "scripts/install_mac.sh", "scripts/install_speech.py", "scripts/doctor.py",
+    "scripts/browser_runtime.mjs", "scripts/check_browser.mjs", "scripts/verify_distribution.py",
+    "discord_archive/__init__.py", "discord_archive/assets.py", "discord_archive/access.py", "discord_archive/system_controls.py", "discord_archive/connection_binding.py", "discord_archive/remote_access.py",
     "discord_archive/browser_login.py", "discord_archive/collector.py",
     "discord_archive/context.py", "discord_archive/editorial.py",
     "discord_archive/export_names.py", "discord_archive/export_copy.py",
@@ -29,7 +32,7 @@ SOURCE_ALLOWLIST = (
     "discord_archive/media.py", "discord_archive/readability.py",
     "discord_archive/render_cache.py", "discord_archive/scheduler.py",
     "discord_archive/settings.py", "discord_archive/speech.py",
-    "discord_archive/store.py", "discord_archive/worker.py",
+    "discord_archive/store.py", "discord_archive/worker.py", "discord_archive/service_control.py", "discord_archive/phone_sessions.py",
     "scripts/benchmark_history.py", "scripts/connect_browser.mjs",
     "scripts/desktop_launcher.py", "scripts/install_service.py",
     "scripts/package_app.py", "scripts/png.mjs", "scripts/render.mjs",
@@ -37,14 +40,23 @@ SOURCE_ALLOWLIST = (
     "scripts/verify_auto_export.py",
     "web/app.js", "web/index.html", "web/manuscript.css", "web/preview.css",
     "web/preview.js", "web/reading.css", "web/style.css", "docs/PACKAGING.md",
+    "docs/REFERENCE.md", "docs/INSTALLATION_ACCEPTANCE.md",
 )
 OPTIONAL_SOURCE_ALLOWLIST = (
+    "helpers/login-assistant-mac.zip", "docs/FINAL_PACKAGE_ACCEPTANCE.md",
+    "scripts/package_native_client.py", "login_assistant/native_client.go", "login_assistant/native_client_test.go", "login_assistant/native_extension/manifest.json", "login_assistant/native_extension/launch.mjs", "login_assistant/native_extension/session.mjs", "login_assistant/native_extension/popup.html", "login_assistant/native_extension/popup.mjs", "scripts/configure_tailscale.py", "scripts/install_login_assistants.py", "scripts/package_login_assistant.py", "login_assistant/assistant.mjs", "login_assistant/assistant.html", "login_assistant/bridge.json", "login_assistant/extension/manifest.json", "login_assistant/extension/intent.js", "login_assistant/extension/background.js", "login_assistant/extension/popup.html", "login_assistant/extension/popup.mjs", "tests/initial_loading_check.mjs", "tests/unified_login_check.mjs", "tests/test_mac_connection.py", "tests/test_helper_packages.py", "tests/test_remote_access.py", "tests/first_login_extension_check.mjs", "tests/first_login_network_check.mjs", "tests/login_assistant_check.mjs", "tests/remote_workspace_check.mjs", "docs/REMOTE_ACCESS_ACCEPTANCE.md", "docs/FIRST_LOGIN_ACCEPTANCE.md", "scripts/bind_linux.py", "scripts/receive_connection.py", "tests/test_connection_binding.py", "tests/connection_binding_check.mjs",
+    "tests/test_system_controls.py", "tests/system_controls_check.mjs", "docs/SYSTEM_CONTROLS_ACCEPTANCE.md",
+    "scripts/verify_speech.py",
+    "scripts/install_linux.sh", "scripts/install_linux_service.py", "scripts/linux_desktop.sh",
+    "docs/LOGIN_ASSISTANT.md", "docs/LINUX.md", "docs/LINUX_ACCEPTANCE.md", "tests/test_linux.py",
     "scripts/benchmark_workspace.py", "docs/WORKSPACE_PERFORMANCE.md",
     "scripts/benchmark_scaling.py", "tests/test_draft_listing.py", "docs/SCALING.md",
     "scripts/benchmark_draft_listing.py", "tests/test_benchmark_scaling.py", "tests/draft_library_check.mjs",
     "tests/test_export_names.py", "tests/test_export_copy.py", "tests/export_settings_check.mjs",
     "tests/test_export_schedule.py", "tests/test_auto_export.py", "tests/test_auto_export_integration.py", "tests/auto_export_check.mjs",
-    "tests/test_packaging.py", "tests/test_settings.py", "tests/test_render_targets.py",
+    "tests/test_phone_sessions.py", "tests/test_service_control.py", "tests/service_controls_check.mjs", "tests/verify_managed_service.py",
+    "docs/SERVICE_CONTROL_ACCEPTANCE.md",
+    "tests/test_packaging.py", "tests/test_installation.py", "tests/onboarding_check.mjs", "tests/test_settings.py", "tests/test_render_targets.py",
     "tests/test_collector_scheduler.py", "tests/test_benchmark_history.py",
     "tests/test_store_context.py", "tests/test_server.py", "tests/test_worker.py",
     "tests/test_readability.py", "tests/test_speech.py", "tests/test_browser_login.py",
@@ -68,7 +80,8 @@ APPLESCRIPT = '''on run
     set appPath to POSIX path of (path to me)
     set launcherPath to appPath & "Contents/Resources/desktop_launcher.py"
     set pythonPath to ""
-    repeat with candidate in {"/opt/homebrew/bin/python3", "/usr/local/bin/python3", "/usr/bin/python3"}
+    set adjacentPython to (do shell script "/usr/bin/dirname " & quoted form of appPath) & "/.runtime/bin/python3"
+    repeat with candidate in {adjacentPython, "/opt/homebrew/bin/python3", "/usr/local/bin/python3", "/usr/bin/python3"}
         try
             do shell script (quoted form of candidate) & " -c " & quoted form of "import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)"
             set pythonPath to contents of candidate
@@ -76,7 +89,7 @@ APPLESCRIPT = '''on run
         end try
     end repeat
     if pythonPath is "" then
-        display dialog "需要 Python 3.10 或更新版本。请先准备本机运行环境，再打开工作台。" buttons {"好"} default button "好" with title "Discord 归档"
+        display dialog "需要 Python 3.10 或更新版本。请先双击同一文件夹中的 Install.command，再打开工作台。" buttons {"好"} default button "好" with title "Discord 归档"
         return
     end if
     try
@@ -147,13 +160,13 @@ def build_app(root: Path, build_dir: Path, portable: bool = False) -> Path:
     return app
 
 
-def write_zip(root: Path, app: Path, archive: Path) -> dict:
+def write_zip(root: Path, app: Path, archive: Path, mac_helper=None) -> dict:
     if archive.exists():
         raise FileExistsError("迁移包已存在，保留原包；请使用新版本目录")
     entries: dict[str, tuple[bytes, int]] = {}
     for source in source_files(root):
         entries[str(PurePosixPath(ZIP_ROOT) / source.relative_to(root).as_posix())] = (
-            source.read_bytes(), 0o644)
+            source.read_bytes(), 0o755 if source.suffix in {".command", ".sh"} else 0o644)
     # osacompile output is newly produced here, not a user-supplied application.
     for source in sorted(app.rglob("*")):
         if not source.is_file():
@@ -166,6 +179,12 @@ def write_zip(root: Path, app: Path, archive: Path) -> dict:
         content = source.read_bytes()
         mode = 0o755 if source.stat().st_mode & stat.S_IXUSR else 0o644
         entries[str(PurePosixPath(ZIP_ROOT) / APP_NAME / relative.as_posix())] = (content, mode)
+    if mac_helper is not None:
+        import importlib.util
+        spec=importlib.util.spec_from_file_location("helper_verifier",Path(__file__).with_name("install_login_assistants.py"));module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        verify=module.verify
+        verify(Path(mac_helper), {'darwin-arm64','darwin-x64'})
+        entries[f"{ZIP_ROOT}/helpers/login-assistant-mac.zip"] = (Path(mac_helper).read_bytes(),0o644)
     manifest = {"format": 1, "kind": "source-and-native-shortcut", "files": [
         {"path": name, "size": len(content), "sha256": digest(content)}
         for name, (content, _mode) in sorted(entries.items())
@@ -212,7 +231,7 @@ def verify_zip(archive: Path) -> dict:
             "sha256": digest(archive.read_bytes()), "verified": True}
 
 
-def build(root: Path, destination: Path) -> dict:
+def build(root: Path, destination: Path, mac_helper=None) -> dict:
     root, destination = root.resolve(), destination.resolve()
     if destination.exists():
         raise FileExistsError("构建版本目录已存在；不会覆盖或删除已有文件")
@@ -223,7 +242,7 @@ def build(root: Path, destination: Path) -> dict:
     portable.mkdir()
     portable_app = build_app(root, portable, portable=True)
     archive = destination / "DiscordArchive-source.zip"
-    verification = write_zip(root, portable_app, archive)
+    verification = write_zip(root, portable_app, archive, mac_helper)
     report = {"app": str(app), "archive": str(archive), **verification,
               "dependencies_bundled": False}
     (destination / "BUILD.json").write_text(json.dumps(report, ensure_ascii=False, indent=2))
@@ -234,12 +253,15 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="生成 macOS 快捷 App 和不含私有数据的源码迁移包")
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parent.parent)
     parser.add_argument("--destination", type=Path)
+    parser.add_argument("--mac-helper", type=Path)
     args = parser.parse_args()
     destination = args.destination or args.root / "dist" / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     # A custom destination still belongs under dist to keep generated files scoped.
     if not destination.resolve().is_relative_to((args.root / "dist").resolve()):
         raise ValueError("构建目录必须位于项目的 dist/ 中")
-    print(json.dumps(build(args.root, destination), ensure_ascii=False, indent=2))
+    helper=args.mac_helper or next((p for p in [args.root/"helpers/login-assistant-mac.zip",args.root/".local/login-assistants/login-assistant-mac.zip"] if p.is_file()),None)
+    if helper is None:parser.error("缺少 Mac 首次连接包；先运行 package_native_client.py --with-first-login，再用 --mac-helper 指定 ZIP")
+    print(json.dumps(build(args.root, destination, helper), ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

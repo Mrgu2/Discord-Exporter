@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "Discord Archive 一次性绑定",
+  "version": "0.1.0",
+  "description": "仅在本人点击时，将当前 Discord 登录连接加密交给本机助手，绑定自己的 Ubuntu。",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuOj63Nh+s9kcDXfhy2oujlNcMfIQY/rVE+Whq1LbUNvA0BtRv6p7LmVFxX5F/M/7CPJHgpg7YP55GJd1YqWzeUVc/+QeVcD/88b2ZBTe9sqKNdlcOaOTOVqQFJ9zoaB7NoYDLToozcBx05WaIBqdlFpYTwrTzfWng4k/2+OpdS6hvCxLvdW5g65sgB0KGwMp0kCWeaTzPDWQn1JB+iGjxy/WzZOo08K7Q//k+h4qVF5KOW5wJ6s2kkgGmOtnJPtGHsFgWCfdTBraPgGpq0bBq8mdRMwUHgvFOwZaRnjOKaGPQZW/Gb+b4fqCGZQxDwbxVKKN7krCyfPW5Ns2/Ro4EQIDAQAB",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://discord.com/*",
+    "http://127.0.0.1/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://discord.com/*"
+      ],
+      "js": [
+        "intent.js"
+      ],
+      "run_at": "document_start"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}

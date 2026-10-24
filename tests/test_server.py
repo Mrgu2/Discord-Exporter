@@ -79,6 +79,43 @@ class ServerBoundaryTests(unittest.TestCase):
         handler.do_GET()
         self.assertEqual(handler.send.call_args.args[0],401)
 
+    def test_delivery_routes_require_auth_and_csrf_and_hide_secrets(self):
+        self.app.credentials=Mock();self.app.credentials.set.return_value='private_file'
+        self.app.invalidate_status_cache=Mock();self.app.sessions['valid']=9999999999
+        self.app.worker.delivery.enqueue_test.return_value='test-id'
+        self.app.worker.delivery.retry.return_value={'status':'pending'}
+        for path,body in [('/api/delivery/credential',{'channel':'telegram','value':'fake-secret'}),
+                ('/api/delivery/test',{'channel':'telegram'}),('/api/delivery/retry',{'id':'test-id'})]:
+            remote=self.handler(path,body,host='192.168.1.4:8765',client='192.168.1.8')
+            remote.mutation();self.assertEqual(remote.send.call_args.args[0],401)
+            remote.headers['Cookie']='archive_session=valid';remote.rfile.seek(0)
+            remote.headers['X-Archive-Key']='bad';remote.mutation()
+            self.assertEqual(remote.send.call_args.args[0],403)
+            remote.headers['X-Archive-Key']='test-csrf';remote.rfile.seek(0);remote.mutation()
+            self.assertEqual(remote.send.call_args.args[0],200 if path.endswith('/credential') else 202)
+            self.assertNotIn('fake-secret',json.dumps(remote.send.call_args.args))
+        self.app.credentials.set.assert_called_once_with('delivery_telegram','fake-secret')
+        self.app.worker.reset_attention.assert_not_called()
+
+    def test_clawbot_binding_requires_administrator_auth_and_csrf(self):
+        self.app.sessions['valid']=9999999999
+        self.app.worker.delivery.clawbot.begin.return_value={'status':'unbound','login_status':'wait'}
+        for path,body in [('/api/clawbot/connect',{}),('/api/clawbot/verify',{'id':'fictional','code':'123456'})]:
+            remote=self.handler(path,body,host='192.168.1.4:8765',client='192.168.1.8')
+            remote.headers['Cookie']='archive_session=valid';remote.mutation()
+            self.assertEqual(remote.send.call_args.args[0],403)
+            local=self.handler(path,body);local.headers['X-Archive-Key']='bad';local.mutation()
+            self.assertEqual(local.send.call_args.args[0],403)
+            good=self.handler(path,body);good.mutation()
+            self.assertEqual(good.send.call_args.args[0],200)
+        raw=self.handler('/api/delivery/credential',{'channel':'clawbot','value':'secret'})
+        raw.mutation();self.assertEqual(raw.send.call_args.args[0],400)
+        self.app.worker.delivery.clawbot.qr.return_value=b'PNG'
+        qr=self.handler('/api/clawbot/qr?id=fictional',method='GET');qr.do_GET()
+        self.assertEqual(qr.send.call_args.args[:3],(200,b'PNG','image/png'))
+        remote=self.handler('/api/clawbot/qr?id=fictional',host='192.168.1.4:8765',client='192.168.1.8',method='GET')
+        remote.do_GET();self.assertEqual(remote.send.call_args.args[0],401)
+
     def test_remote_cannot_set_account_credentials_even_with_session(self):
         self.app.sessions['valid']=9999999999
         handler=self.handler('/api/credentials',{'kind':'discord','value':'fictitious'},host='192.168.1.4:8765',client='192.168.1.8')

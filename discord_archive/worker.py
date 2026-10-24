@@ -14,6 +14,7 @@ from .scheduler import due, market_day
 from .settings import atomic_json, message_location
 from .store import parse_time, utc_now
 from .auto_export import ScheduledExporter
+from .delivery import DeliveryOutbox
 
 
 class Worker:
@@ -52,6 +53,8 @@ class Worker:
         self._queued_capture = False
         self._queued_auto_export = False
         self.auto_export = ScheduledExporter(root)
+        self.delivery = DeliveryOutbox(root, settings, credentials, self.stop_event)
+        self._queued_delivery = False
         self._render_jobs = {}
         self._last_schedule_slot = None
         self.configure_auto_export(self.settings.read())
@@ -67,6 +70,8 @@ class Worker:
             atomic_json(self.path, self.state)
 
     def start(self):
+        if self.delivery.clawbot.account:
+            self.delivery.clawbot.start()
         self.thread = threading.Thread(target=self.loop, name='archive-worker', daemon=True)
         self.thread.start()
 
@@ -87,6 +92,8 @@ class Worker:
 
     @staticmethod
     def automatic_job(job):
+        if job['type'] == 'delivery':
+            return not job['payload'].get('manual', False)
         return job['type'] == 'auto_export' or (job['type'] == 'capture' and
             job['payload'].get('trigger') in {'scheduled', 'reconnect'})
 
@@ -96,6 +103,8 @@ class Worker:
                 raise ValueError('服务正在重启或停止，请稍后操作')
             if self.state.get('automatic_paused') and self.automatic_job({'type': kind, 'payload': payload or {}}):
                 raise ValueError('自动任务已暂停')
+            if kind == 'delivery' and self._queued_delivery:
+                raise ValueError('已有发送任务在进行或等待')
             if kind == 'auto_export' and self._queued_auto_export:
                 raise ValueError('已有定时出稿任务在进行或等待')
             if kind == 'render':
@@ -126,6 +135,8 @@ class Worker:
                 self._render_jobs[(payload.get('draft_id'),payload['target'],payload['render_scale'])] = identifier
             if kind == 'auto_export':
                 self._queued_auto_export = True
+            if kind == 'delivery':
+                self._queued_delivery = True
             self.jobs.put({'id': identifier, 'type': kind, 'payload': payload or {}})
             return {'id': identifier, 'status': 'queued', 'type': kind}
 
@@ -212,19 +223,26 @@ class Worker:
                 next_schedule_check = time.monotonic() + 10
                 try:
                     with self.lock:
-                        if not self.draining and not self.state.get('automatic_paused'):
-                            config = self.settings.read()
-                            export_slot = self.auto_export.due(config,now)
-                            if self.credentials.get('discord') and any(row.get('enabled', True) for row in config.get('channels', [])) and not self.state.get('requires_attention'):
-                                retry = parse_time(self.state.get('retry_at'))
-                                slot = due(config, now, self.state.get('last_success_at'), self.state.get('last_slot'))
-                                ready_retry = retry and now >= retry
-                                allowed_schedule = slot and (not retry or now >= retry)
-                                if not self._queued_capture and not self._queued_auto_export and not self.state.get('active_job'):
-                                    if export_slot and (not retry or now >= retry):
-                                        self.submit('auto_export',{'slot':export_slot})
-                                    elif ready_retry or allowed_schedule:
-                                        self.submit('capture', {'trigger': 'reconnect' if ready_retry else 'scheduled', 'slot': slot})
+                        if not self.draining:
+                            paused = bool(self.state.get('automatic_paused'))
+                            # Tests and explicit retries are user actions, like
+                            # manual captures, and must work while automation is paused.
+                            delivery_id = self.delivery.due(now, manual_only=paused)
+                            if delivery_id and not self._queued_delivery and not self.state.get('active_job'):
+                                self.submit('delivery', {'id': delivery_id, 'manual': self.delivery.is_manual(delivery_id)})
+                            if not paused:
+                                config = self.settings.read()
+                                export_slot = self.auto_export.due(config,now)
+                                if self.credentials.get('discord') and any(row.get('enabled', True) for row in config.get('channels', [])) and not self.state.get('requires_attention'):
+                                    retry = parse_time(self.state.get('retry_at'))
+                                    slot = due(config, now, self.state.get('last_success_at'), self.state.get('last_slot'))
+                                    ready_retry = retry and now >= retry
+                                    allowed_schedule = slot and (not retry or now >= retry)
+                                    if not self._queued_capture and not self._queued_auto_export and not self.state.get('active_job'):
+                                        if export_slot and (not retry or now >= retry):
+                                            self.submit('auto_export',{'slot':export_slot})
+                                        elif ready_retry or allowed_schedule:
+                                            self.submit('capture', {'trigger': 'reconnect' if ready_retry else 'scheduled', 'slot': slot})
                             self.persist()
                 except Exception:
                     with self.lock:
@@ -237,13 +255,15 @@ class Worker:
                 if self.state.get('automatic_paused') and self.automatic_job(job):
                     if job['type'] == 'capture':
                         self._queued_capture = False
+                    elif job['type'] == 'delivery':
+                        self._queued_delivery = False
                     else:
                         self._queued_auto_export = False
                     self.jobs.task_done()
                     continue
                 self.state.update(status='running', active_job={'type': job['type'], 'id': job['id'],
                     **({key:job['payload'].get(key) for key in ('draft_id','target','render_scale')} if job['type'] == 'render' else {}),
-                    'message': {'capture': '正在保存频道与回复上下文', 'auto_export': '正在保存并导出交易日稿件', 'draft': '正在生成稿件', 'render': '正在生成分栏图' if job['payload'].get('target') == 'mobile' else '正在生成高清主图', 'import': '正在导入存档', 'connect_browser': '请在新打开的 Discord 窗口中登录'}.get(job['type'], '处理中')})
+                    'message': {'delivery': '正在发送图片', 'capture': '正在保存频道与回复上下文', 'auto_export': '正在保存并导出交易日稿件', 'draft': '正在生成稿件', 'render': '正在生成分栏图' if job['payload'].get('target') == 'mobile' else '正在生成高清主图', 'import': '正在导入存档', 'connect_browser': '请在新打开的 Discord 窗口中登录'}.get(job['type'], '处理中')})
                 self.persist()
             try:
                 if job['type'] == 'capture':
@@ -251,6 +271,8 @@ class Worker:
                     self.state['last_slot'] = job['payload'].get('slot') or self.state.get('last_slot')
                 elif job['type'] == 'auto_export':
                     result = self.auto_export.run(self,job['payload']['slot'])
+                elif job['type'] == 'delivery':
+                    result = self.delivery.send(job['payload']['id'])
                 elif job['type'] == 'draft':
                     result = self.drafts.generate(job['payload'])
                 elif job['type'] == 'render':
@@ -292,6 +314,8 @@ class Worker:
                         self._queued_capture = False
                     if job['type'] == 'auto_export':
                         self._queued_auto_export = False
+                    if job['type'] == 'delivery':
+                        self._queued_delivery = False
                     if job['type'] == 'render':
                         self._render_jobs.pop((job['payload'].get('draft_id'),job['payload'].get('target','main'),job['payload'].get('render_scale',1)),None)
                     self.persist()
@@ -309,6 +333,8 @@ class Worker:
             for job in [state.get('active_job') or {}, *[{**job,**job['payload']} for job in queued]] if job.get('type') == 'render']
         config = self.settings.read()
         state['auto_export'] = self.auto_export.summary(config,now)
+        state['delivery'] = self.delivery.summary()
+        state['clawbot'] = self.delivery.clawbot.status()
         state['market_day'] = market_day(now, config['market_timezone'], config.get('day_boundary_hour', 4))
         # Search the next day's minute slots in UTC, including DST transitions.
         next_time = None

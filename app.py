@@ -144,7 +144,7 @@ class Application:
         page = self.drafts.list_draft_page(limit=3)
         credential_revision = (state.get('browser_connected'), (state.get('browser_account') or {}).get('id'))
         credential_flags = self._cached_status_value(('credentials', credential_revision), 30,
-            lambda: {kind: bool(self.credentials.get(kind)) for kind in ('discord', 'model')})
+            lambda: {kind: bool(self.credentials.get(kind)) for kind in ('discord', 'model', 'delivery_email', 'delivery_telegram', 'delivery_discord', 'delivery_clawbot')})
         return {
             'platform': {'system': sys.platform, 'login_desktop': bool(os.environ.get('DISCORD_ARCHIVE_LOGIN_DESKTOP')) if local else False},
             'system': self._cached_status_value('system_controls',30,
@@ -291,6 +291,12 @@ def make_handler(application):
             if not self.authorized():
                 return self.send(401, {'error': '请先输入本机显示的手机访问口令'})
             try:
+                if url.path == '/api/clawbot/qr':
+                    try:
+                        content = app.worker.delivery.clawbot.qr(parse_qs(url.query).get('id', [''])[0])
+                        return self.send(200, content, 'image/png', {'Cache-Control': 'no-store'})
+                    except ValueError as exc:
+                        return self.send(400, {'error': str(exc)})
                 if url.path == '/api/status':
                     return self.send(200, app.status(local=self.administrator()))
                 if url.path == '/api/drafts':
@@ -431,8 +437,8 @@ def make_handler(application):
                     result = app.settings.update(data)
                     if 'auto_export' in data:
                         app.worker.configure_auto_export(result)
-                    if {key:value for key,value in old.items() if key not in {'export','auto_export'}} != {
-                            key:value for key,value in result.items() if key not in {'export','auto_export'}}:
+                    if {key:value for key,value in old.items() if key not in {'export','auto_export','delivery'}} != {
+                            key:value for key,value in result.items() if key not in {'export','auto_export','delivery'}}:
                         app.worker.reset_attention()
                     return self.send(200, result)
                 if path == '/api/export-directory' and self.command == 'POST':
@@ -441,6 +447,25 @@ def make_handler(application):
                     if data.get('action') != 'choose':
                         raise ValueError('请选择文件夹或填写本机路径')
                     return self.send(200, choose_export_directory())
+                if path in ('/api/clawbot/connect', '/api/clawbot/verify') and self.command == 'POST':
+                    if not self.administrator():
+                        return self.send(403, {'error': '微信绑定请通过本机、SSH 隧道或管理员连接操作'})
+                    if path.endswith('/connect'):
+                        return self.send(200, app.worker.delivery.clawbot.begin())
+                    return self.send(200, app.worker.delivery.clawbot.verify(data.get('id'), data.get('code')))
+                if path in ('/api/delivery/test', '/api/delivery/retry') and self.command == 'POST':
+                    if path.endswith('/test'):
+                        identifier = app.worker.delivery.enqueue_test(data.get('channel'))
+                        return self.send(202, {'id': identifier, 'status': 'pending'})
+                    return self.send(202, app.worker.delivery.retry(data.get('id')))
+                if path == '/api/delivery/credential' and self.command == 'POST':
+                    from discord_archive.delivery_config import SECRET_KINDS
+                    kind = SECRET_KINDS.get(data.get('channel'))
+                    if not kind or data.get('channel') == 'clawbot':
+                        raise ValueError('此渠道请通过扫码绑定配置')
+                    backend = app.credentials.set(kind, data.get('value'))
+                    app.invalidate_status_cache()
+                    return self.send(200, {'ok': True, 'backend': backend})
                 if path == '/api/credentials':
                     if not self.administrator():
                         return self.send(403, {'error': '账号凭证请仅在 Mac 本机配置'})

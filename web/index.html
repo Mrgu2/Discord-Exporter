@@ -53,7 +53,7 @@
       </div></section>
       <section class="settings-section" id="auto-export-settings"><h2>定时出稿</h2><div class="settings-fields">
         <label class="toggle-row"><span>启用定时出稿</span><input id="auto-export-enabled" type="checkbox" role="switch"><span class="switch" aria-hidden="true"></span></label>
-        <p class="form-help">到点先保存频道，再整理整个纽约交易日累计内容；沿用上方自动另存目录。</p>
+        <p class="form-help">到点先保存频道，再整理整个纽约交易日累计内容；可另存到目录或通过下方渠道推送。</p>
         <div class="field"><label for="auto-export-times">出稿时刻 <span class="optional">纽约时间</span></label><input id="auto-export-times" value="16:15" placeholder="例如 10:45, 16:15" spellcheck="false"><p class="form-help">多个时刻用逗号分隔，自动跟随纽约夏令时。</p></div>
         <div class="field-grid"><div class="field"><label for="auto-export-weekdays">执行日</label><select id="auto-export-weekdays"><option value="weekdays">周一至周五</option><option value="daily">每天</option></select></div><div class="field"><label for="auto-export-scales">清晰度</label><select id="auto-export-scales"><option value="1">标准 · 1×</option><option value="2">HiDPI · 2×</option><option value="both">两档都导出</option></select></div></div>
         <div class="field-grid"><div class="field"><label for="auto-export-layout">版式</label><select id="auto-export-layout"><option value="horizontal">左右分区高清图</option><option value="stacked">上下分区拼图</option><option value="collage">自动拼版</option><option value="board">四栏主题拼版</option><option value="qa">独立问答页</option></select></div><div class="field"><label for="auto-export-presentation">内容</label><select id="auto-export-presentation"><option value="reading">精简阅读</option><option value="full">完整原文核对</option></select></div></div>
@@ -62,6 +62,43 @@
         <p id="auto-export-error" class="inline-error" role="alert" hidden></p><a id="auto-export-last-draft" class="text-button" target="_blank" rel="noopener" hidden>查看上次稿件</a>
       </div></section>
       <section class="settings-section" id="model-settings" hidden><h2>模型配置 · 预留</h2><div class="settings-fields"><input id="model-enabled" type="checkbox" disabled><input id="model-base-url" type="url"><input id="model-name"></div></section><div class="settings-save"><span id="config-save-status" class="form-help" role="status">设置保存在本机。</span><button id="config-save-button" type="submit" class="button primary">保存设置</button></div></form>
+      <section class="settings-section" id="delivery-settings"><h2>自动推送</h2><div class="settings-fields">
+        <p class="form-help">定时生成后发送原始 PNG；可多选渠道。测试发送会先保存本区设置，发送一张测试图片。</p>
+        <form id="delivery-form"><div class="settings-fields">
+<details class="boundary-settings" data-delivery-channel="email"><summary>邮箱<span id="delivery-email-configured" class="muted">未配置</span></summary><div class="settings-fields">
+        <label class="toggle-row"><span>启用邮箱推送</span><input id="delivery-email-enabled" type="checkbox" role="switch"><span class="switch" aria-hidden="true"></span></label>
+<div class="field-grid"><div class="field"><label for="delivery-email-host">SMTP 服务器</label><input id="delivery-email-host" placeholder="smtp.example.com" autocomplete="off"></div><div class="field"><label for="delivery-email-port">端口</label><input id="delivery-email-port" type="number" min="1" max="65535" value="465"></div></div>
+        <div class="field"><label for="delivery-email-security">连接加密</label><select id="delivery-email-security"><option value="ssl">SSL（通常 465）</option><option value="starttls">STARTTLS（通常 587）</option></select></div>
+        <div class="field"><label for="delivery-email-username">SMTP 登录账号</label><input id="delivery-email-username" autocomplete="off" placeholder="留空使用发件邮箱"></div>
+        <div class="field"><label for="delivery-email-sender">发件邮箱</label><input id="delivery-email-sender" type="email" autocomplete="off"></div>
+        <div class="field"><label for="delivery-email-recipients">收件邮箱</label><input id="delivery-email-recipients" placeholder="多个地址用逗号分隔" autocomplete="off"></div>
+<div class="field"><label for="delivery-email-secret">SMTP 密码 / 授权码</label><input id="delivery-email-secret" type="password" autocomplete="new-password" spellcheck="false" placeholder="留空保留已保存凭据"></div>
+        <button type="button" class="button secondary" data-delivery-test="email">保存并测试邮箱</button></div></details>
+<details class="boundary-settings" data-delivery-channel="telegram"><summary>Telegram<span id="delivery-telegram-configured" class="muted">未配置</span></summary><div class="settings-fields">
+        <label class="toggle-row"><span>启用Telegram推送</span><input id="delivery-telegram-enabled" type="checkbox" role="switch"><span class="switch" aria-hidden="true"></span></label>
+<div class="field"><label for="delivery-telegram-chat_id">Chat ID 或频道用户名</label><input id="delivery-telegram-chat_id" placeholder="例如 123456789、-100… 或 @channel" autocomplete="off"><p class="form-help">私聊先向 Bot 发送 /start；频道需授予 Bot 发消息权限。</p></div>
+<div class="field"><label for="delivery-telegram-secret">Bot Token</label><input id="delivery-telegram-secret" type="password" autocomplete="new-password" spellcheck="false" placeholder="留空保留已保存凭据"></div>
+        <button type="button" class="button secondary" data-delivery-test="telegram">保存并测试Telegram</button></div></details>
+<details class="boundary-settings" data-delivery-channel="discord"><summary>Discord<span id="delivery-discord-configured" class="muted">未配置</span></summary><div class="settings-fields">
+        <label class="toggle-row"><span>启用Discord推送</span><input id="delivery-discord-enabled" type="checkbox" role="switch"><span class="switch" aria-hidden="true"></span></label>
+<p class="form-help">在目标频道的“整合 → Webhook”中创建并复制地址。</p>
+<div class="field"><label for="delivery-discord-secret">Webhook URL</label><input id="delivery-discord-secret" type="password" autocomplete="new-password" spellcheck="false" placeholder="留空保留已保存凭据"></div>
+        <button type="button" class="button secondary" data-delivery-test="discord">保存并测试Discord</button></div></details>
+<details class="boundary-settings" data-delivery-channel="clawbot"><summary>微信 ClawBot<span id="delivery-clawbot-configured" class="muted">未绑定</span></summary><div class="settings-fields">
+        <label class="toggle-row"><span>启用微信 ClawBot 推送</span><input id="delivery-clawbot-enabled" type="checkbox" role="switch"><span class="switch" aria-hidden="true"></span></label>
+        <p id="clawbot-status" class="form-help" role="status">尚未绑定微信</p>
+        <button id="clawbot-connect" type="button" class="button secondary">扫码绑定微信</button>
+        <div id="clawbot-qr-panel" hidden><img id="clawbot-qr" alt="微信 ClawBot 绑定二维码" width="320" height="320"><p class="form-help">用微信 ClawBot 页面里的“开始扫一扫”扫码并在手机确认。绑定后，向 ClawBot 发一句“你好”。</p></div>
+        <div id="clawbot-verify-panel" class="field" hidden><label for="clawbot-verify-code">微信手机端显示的验证码</label><input id="clawbot-verify-code" inputmode="numeric" autocomplete="one-time-code" maxlength="12"><button id="clawbot-verify" type="button" class="button secondary">提交验证码</button></div>
+        <p id="clawbot-error" class="inline-error" role="alert" hidden></p>
+        <button type="button" class="button secondary" data-delivery-test="clawbot">保存并测试微信</button>
+        <p class="form-help">按原始 PNG 文件发送。微信会话可能失效；看到“需微信操作”时，请先在微信发一条消息，应用将尝试补发。建议保留邮箱或 Telegram 兜底。</p>
+        </div></details>
+<div><button type="submit" class="button primary" id="delivery-save">保存推送设置</button></div>
+        <p id="delivery-save-status" class="form-help" role="status"></p></div></form>
+        <p class="form-help">失败后自动重试最多 8 次，也可手动重试。暂停自动任务只暂停自动推送，手动测试和补发仍会执行；发送确认丢失时，重试可能重复投递。</p>
+        <div id="delivery-history" aria-live="polite"></div>
+      </div></section>
       <section id="linux-binding" class="settings-section" hidden><h2>连接 Discord</h2><div class="settings-fields"><div id="helper-downloads" hidden><p class="form-help">首次连接：运行包内连接工具，在日常 Discord 标签页识别并确认账号。Mac 本地连接到本机资料库；Ubuntu 连接到私网服务器。已有 Ubuntu 连接时，换电脑只需 Tailscale 和访问客户端。</p><p><a class="button secondary" href="/download/login-assistant-mac.zip">Mac 连接工具与访问客户端</a> <a id="windows-helper-download" class="button secondary" href="/download/login-assistant-windows.zip">Windows 访问客户端</a></p><p class="form-help">客户端自动寻找同私网工作台，地址也可通过包内设置工具修改。Mac 包适用 Apple Silicon；Windows x64 尚待实机验收。首次部署时，运行包内“首次连接 Discord”（Windows：Connect Discord.cmd），加载同目录 Browser Extension；在日常 Discord 标签页点扩展，识别并确认账号。首次连接只做一次；Ubuntu 连接后可独立运行。</p></div><div id="legacy-binding"><p class="form-help">尚未配置 Tailscale HTTPS，可先使用旧版 SSH 绑定。先在 Mac 本机工作台完成正常登录，再在 Mac 项目目录运行：</p><pre><code id="linux-binding-command" tabindex="0"></code></pre></div><button id="connect-browser-fallback" type="button" class="button secondary" hidden>备用登录（VNC）</button></div></section>
       <section id="credentials-section" class="settings-section"><h2>手动连接</h2><div class="settings-fields"><details class="manual-connection"><summary>登录窗口连接不成功时使用</summary><p class="form-help">仅在这台 Mac 上输入，页面不显示已保存的值。</p><form class="credential-form" data-kind="discord"><div class="field"><div class="label-row"><label for="discord-credential">Discord 账号凭证</label><span id="discord-credential-status" class="muted">未配置</span></div><div class="credential-input"><input id="discord-credential" type="password" autocomplete="new-password" spellcheck="false" required><button class="button secondary" type="submit">保存并连接</button></div></div></form><form class="credential-form" data-kind="model" hidden><input id="model-credential" type="password" autocomplete="new-password"><span id="model-credential-status"></span><button type="submit">保存密钥</button></form></details></div></section>
       <section class="settings-section"><h2>手机访问</h2><div class="settings-fields"><div id="remote-urls" class="remote-urls"></div><div id="remote-code-block" hidden><div class="remote-code-label">访问口令</div><div class="remote-code-row"><code id="remote-code"></code><button class="text-button" id="copy-remote-code" type="button">复制</button></div></div><p id="remote-phone-note" class="form-help" hidden>账号连接请在常开 Mac 上操作。</p></div></section>

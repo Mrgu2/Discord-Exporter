@@ -83,3 +83,9 @@ systemctl --user restart discordarchive.service
 这是一条经本人确认的账号连接迁移流程，**不是 Discord 官方 OAuth**。普通 OAuth 的身份授权不等于频道历史读取权限；连接仍可能过期，届时重复本节即可。Mac 到空 Ubuntu 的首次连接与独立采集已实测；Windows 包已构建，尚待实机验收。详见 [首次连接验收与限制](FIRST_LOGIN_ACCEPTANCE.md)。
 
 连接成功后按 [第一次采集出图](USAGE.md#第一次采集出图)验证一个小频道。以后的访问见 [访问已有 Ubuntu](ACCESS.md)。
+
+## 配置定时图片推送（可选）
+
+先按 [首次使用](USAGE.md#第一次采集出图)完成一份真实稿件与 PNG，再按 [图片推送教程](DELIVERY.md)配置邮箱、Telegram、Discord 或微信 ClawBot。四个渠道默认关闭；测试收到附件后，再启用渠道和定时出稿，并确认自动任务未暂停。
+
+配置应保存在 Ubuntu 的工作台中；本地 Mac 的配置不会同步到服务器。发送由 Ubuntu 发起，还需在服务器确认目标平台的 HTTPS 或 SMTP 出站连接可用。当前推送渠道的真实收件验收完成于 Mac，Ubuntu 需要在自己的部署环境另测。

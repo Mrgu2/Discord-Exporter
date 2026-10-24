@@ -292,3 +292,13 @@ th:first-child { width: 23%; } th:nth-child(2) { width: 17%; } th:nth-child(3) {
 #service-stop { color: var(--danger, #a33b3b); margin-top: 8px; }
 
 #helper-authorization{max-width:34rem;border:1px solid #dce3ee;border-radius:12px;padding:28px;color:#27364b}#helper-authorization::backdrop{background:#26344888}#helper-server{overflow-wrap:anywhere}
+
+/* Delivery history remains readable for long titles and narrow phone screens. */
+.delivery-record { padding: 12px 0; border-bottom: 1px solid var(--border, #dce4e8); overflow-wrap: anywhere; }
+.delivery-record strong { font-weight: 500; }
+[data-delivery-channel] summary .muted { margin-left: 12px; font-size: 12px; font-weight: 400; }
+
+#delivery-form > .settings-fields > div:last-of-type { margin-top: 16px; }
+[data-delivery-channel] > .settings-fields { padding-bottom: 12px; }
+
+#clawbot-qr { display: block; max-width: 100%; height: auto; background: white; margin-top: 12px; }

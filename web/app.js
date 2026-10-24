@@ -8,6 +8,9 @@
   let publicConfig = {};
   let configInitialized = false;
   let settingsDirty = false;
+  let deliveryDirty = false;
+  let deliverySaving = false;
+  let deliveryHistorySignature = "";
   let fetching = false;
   let toastTimer;
   let serviceFailedAt = null;
@@ -136,6 +139,112 @@
     if (changeHash && location.hash !== `#${view}`) history.replaceState(null, '', `#${view}`);
     if (view === 'library' && snapshot) { renderDrafts(true); syncDraftLibrary(); }
   }
+  const deliveryChannels = ['email', 'telegram', 'discord', 'clawbot'];
+  function deliveryPreferences() {
+    return {
+      email: {enabled: $('delivery-email-enabled').checked, host: $('delivery-email-host').value.trim(),
+        port: Number($('delivery-email-port').value), security: $('delivery-email-security').value,
+        username: $('delivery-email-username').value.trim(), sender: $('delivery-email-sender').value.trim(),
+        recipients: $('delivery-email-recipients').value.split(/[,，;；\s]+/).filter(Boolean)},
+      telegram: {enabled: $('delivery-telegram-enabled').checked, chat_id: $('delivery-telegram-chat_id').value.trim()},
+      discord: {enabled: $('delivery-discord-enabled').checked},
+      clawbot: {enabled: $('delivery-clawbot-enabled').checked}
+    };
+  }
+  function renderDelivery(data) {
+    const preferences = data.config?.delivery || {};
+    for (const channel of deliveryChannels) {
+      text(`delivery-${channel}-configured`, channel === 'clawbot' ? (data.state?.clawbot?.connected ? '已绑定' : '未绑定') : data.credentials?.[`delivery_${channel}`] ? '凭据已保存' : '未配置凭据');
+      if (!deliveryDirty && !deliverySaving) {
+        const row = preferences[channel] || {};
+        $(`delivery-${channel}-enabled`).checked = Boolean(row.enabled);
+        for (const [key, value] of Object.entries(row)) {
+          const input = $(`delivery-${channel}-${key}`);
+          if (input && key !== 'enabled') input.value = Array.isArray(value) ? value.join(', ') : value;
+        }
+      }
+    }
+    renderClawBot(data.state?.clawbot || {});
+    const items = data.state?.delivery || [];
+    const signature = JSON.stringify(items);
+    if (deliveryHistorySignature === signature) return;
+    deliveryHistorySignature = signature;
+    const history = $('delivery-history'); history.replaceChildren();
+    if (!items.length) { history.append(node('p', 'form-help', '尚无发送记录')); return; }
+    for (const item of items) {
+      const row = node('div', 'delivery-record');
+      row.append(node('strong', '', `${{email:'邮箱',telegram:'Telegram',discord:'Discord',clawbot:'微信 ClawBot'}[item.channel]} · ${item.title}`));
+      row.append(node('p', 'form-help', `${{pending:'等待发送',retrying:'等待重试',failed:'发送失败',sent:'已发送',attention:'需微信操作'}[item.status] || item.status}${item.error ? ' · ' + item.error : ''}${item.status === 'retrying' && item.retry_at ? ' · 下次重试 ' + dateTime(item.retry_at) : ''}`));
+      if (['failed','retrying','attention'].includes(item.status)) {
+        const retry = node('button', 'text-button', '重试发送'); retry.type = 'button';
+        retry.addEventListener('click', async () => {
+          retry.disabled = true;
+          try { await post('/api/delivery/retry', {id: item.id}); showToast('已加入补发队列。'); await refresh(); }
+          catch (error) { showToast(error.message, true); retry.disabled = false; }
+        }); row.append(retry);
+      }
+      history.append(row);
+    }
+  }
+  function renderClawBot(state) {
+    const labels = {unbound:'尚未绑定微信',ready:'微信会话可发送',needs_message:'已绑定，请向微信 ClawBot 发一条消息',needs_rebind:'微信登录已失效，请重新扫码'};
+    const loginLabels = {wait:'等待扫码',scaned:'已扫码，请在手机确认',need_verifycode:'请填写微信手机端显示的验证码',expired:'二维码已过期，请重新生成',verify_code_blocked:'验证码尝试过多，请重新生成二维码',scaned_but_redirect:'正在连接微信服务'};
+    text('clawbot-status', loginLabels[state.login_status] || labels[state.status] || labels.unbound);
+    $('clawbot-connect').textContent = ['expired','verify_code_blocked'].includes(state.login_status) ? '重新生成二维码' : state.connected ? '重新绑定微信' : '扫码绑定微信';
+    $('clawbot-connect').disabled = !isLocal;
+    $('delivery-clawbot-enabled').disabled = !state.connected;
+    const showQR = Boolean(state.qr_url && !['confirmed','expired','verify_code_blocked'].includes(state.login_status));
+    $('clawbot-qr-panel').hidden = !showQR;
+    if (showQR && $('clawbot-qr').getAttribute('src') !== state.qr_url) $('clawbot-qr').src = state.qr_url;
+    if (!showQR) $('clawbot-qr').removeAttribute('src');
+    $('clawbot-verify-panel').hidden = state.login_status !== 'need_verifycode';
+    $('clawbot-error').hidden = !state.error && isLocal;
+    text('clawbot-error', state.error || (!isLocal ? '扫码绑定请通过管理员连接操作。' : ''));
+  }
+  async function connectClawBot() {
+    const button = $('clawbot-connect'); button.disabled = true;
+    try {
+      const result = await post('/api/clawbot/connect', {});
+      renderClawBot(result);
+      showToast('二维码已生成，请用微信扫码并确认。');
+    } catch (error) {showToast(error.message, true);}
+    finally {button.disabled = !isLocal;}
+  }
+  async function verifyClawBot() {
+    const button = $('clawbot-verify'); button.disabled = true;
+    try {
+      await post('/api/clawbot/verify', {id:snapshot?.state?.clawbot?.login_id, code:$('clawbot-verify-code').value.trim()});
+      $('clawbot-verify-code').value = ''; showToast('验证码已提交，正在等待微信确认。');
+    } catch (error) {showToast(error.message, true);}
+    finally {button.disabled = false;}
+  }
+  async function saveDelivery(channel = null) {
+    if (deliverySaving) return;
+    deliverySaving = true;
+    const buttons = [...$('delivery-form').querySelectorAll('button')]; buttons.forEach(button => button.disabled = true);
+    try {
+      const preferences = deliveryPreferences();
+      for (const name of deliveryChannels) {
+        const input = $(`delivery-${name}-secret`);
+        if (input?.value.trim()) {
+          await post('/api/delivery/credential', {channel:name, value:input.value.trim()});
+          input.value = '';
+        }
+      }
+      await api('/api/config', {method:'PUT', body:JSON.stringify({delivery:preferences})});
+      deliveryDirty = false;
+      text('delivery-save-status', '推送设置已保存。');
+      if (channel) {
+        await post('/api/delivery/test', {channel});
+        text('delivery-save-status', '设置已保存，测试已排队；发送结果见下方记录。');
+      }
+      showToast(channel ? '测试发送已排队。' : '推送设置已保存。');
+    } catch (error) {
+      text('delivery-save-status', error.message); showToast(error.message, true);
+    } finally {
+      deliverySaving = false; buttons.forEach(button => button.disabled = false); await refresh();
+    }
+  }
   function hydrateConfig(config) {
     publicConfig = config || {};
     if (settingsDirty && configInitialized) return;
@@ -245,6 +354,7 @@
   function renderState(data) {
     isLocal = ['localhost','127.0.0.1','::1','[::1]'].includes(location.hostname) || data.remote?.administrator === true;
     remoteRenderJobs = data.state?.render_jobs || [];
+    renderDelivery(data);
     snapshot = data;
     if (data.platform?.system === 'linux') {
       document.querySelector('label[for="export-copy-directory"]').textContent = '自动另存目录（Linux 服务器）';
@@ -863,7 +973,7 @@
       if (autoExportEnabled && !autoExportTimes.length) throw new Error('请填写至少一个纽约时间出稿时刻。');
       if (autoExportTimes.length > 24) throw new Error('出稿时刻最多设置 24 个。');
       const copyDirectory = isLocal ? exportOptions.copy_directory : publicConfig.export?.copy_directory;
-      if (autoExportEnabled && !String(copyDirectory || '').trim()) throw new Error(isLocal ? '请先在上方选择自动另存目录，再启用定时出稿。' : '请先在 Mac 上设置自动另存目录，再启用定时出稿。');
+      if (autoExportEnabled && !String(copyDirectory || '').trim() && !Object.values(publicConfig.delivery || {}).some(row => row.enabled)) throw new Error(isLocal ? '请先在上方选择自动另存目录，再启用定时出稿。' : '请先在 Mac 上设置自动另存目录，再启用定时出稿。');
       const autoExportDays = $('auto-export-weekdays').value;
       const autoExportScales = $('auto-export-scales').value;
       const autoExport = { ...autoExportDefaults, ...publicConfig.auto_export, enabled: autoExportEnabled,
@@ -994,6 +1104,11 @@
   document.querySelectorAll('input[name="scope"]').forEach((input) => input.addEventListener('change', changeScope));
   $('draft-mode').addEventListener('change', updateMode);
   $('draft-layout').addEventListener('change', () => { if (snapshot) renderState(snapshot); });
+  $('clawbot-connect').addEventListener('click', connectClawBot);
+  $('clawbot-verify').addEventListener('click', verifyClawBot);
+  $('delivery-form').addEventListener('submit', event => {event.preventDefault(); saveDelivery();});
+  $('delivery-form').addEventListener('input', () => {deliveryDirty = true; text('delivery-save-status', '有未保存的推送设置。');});
+  document.querySelectorAll('[data-delivery-test]').forEach(button => button.addEventListener('click', () => saveDelivery(button.dataset.deliveryTest)));
   $('config-form').addEventListener('submit', saveConfig);
   $('config-form').addEventListener('input', () => { settingsDirty = true; text('config-save-status', '有未保存的设置。'); });
   for (const id of ['export-prefix', 'export-date-format', 'export-sequence-digits', 'export-separator']) {

@@ -9,6 +9,7 @@ import threading
 import unicodedata
 from pathlib import Path
 from zoneinfo import ZoneInfo
+from .delivery_config import DEFAULT_DELIVERY, normalize_delivery
 from .export_schedule import AUTO_EXPORT_DEFAULTS, normalize_auto_export
 
 DEFAULT_CONFIG = {
@@ -24,6 +25,7 @@ DEFAULT_CONFIG = {
     'export': {'name_prefix': '答疑存档', 'date_format': 'YYYY-MM-DD',
         'sequence_digits': 2, 'separator': '-', 'copy_directory': ''},
     'auto_export': copy.deepcopy(AUTO_EXPORT_DEFAULTS),
+    'delivery': copy.deepcopy(DEFAULT_DELIVERY),
 }
 
 
@@ -105,6 +107,7 @@ class Settings:
                 raise ValueError('导出设置须为对象')
             value['export'] = normalize_export_preferences(saved_export,validate_directory=False)
             value['auto_export'] = normalize_auto_export(value.get('auto_export',{}))
+            value['delivery'] = normalize_delivery(value.get('delivery'))
             return value
 
     def update(self, incoming):
@@ -121,6 +124,13 @@ class Settings:
                         if not isinstance(content,dict):
                             raise ValueError('导出设置须为对象')
                         value[key] = {**value['export'],**content}
+                    elif key == 'delivery':
+                        if not isinstance(content, dict):
+                            raise ValueError('推送设置须为对象')
+                        if any(not isinstance(row, dict) for row in content.values()):
+                            raise ValueError('渠道设置须为对象')
+                        value[key] = normalize_delivery({**value['delivery'], **{channel: {**value['delivery'].get(channel, {}), **row}
+                            for channel, row in content.items()}})
                     elif key == 'auto_export':
                         if not isinstance(content,dict):
                             raise ValueError('自动导出设置须为对象')
@@ -129,8 +139,10 @@ class Settings:
                         value[key] = content
             value['export'] = normalize_export_preferences(value['export'])
             value['auto_export'] = normalize_auto_export(value['auto_export'])
-            if value['auto_export']['enabled'] and not value['export']['copy_directory']:
-                raise ValueError('开启定时出稿前，请先在 Mac 上设置自动另存目录')
+            if (('auto_export' in incoming or 'export' in incoming)
+                    and value['auto_export']['enabled'] and not value['export']['copy_directory']
+                    and not any(row['enabled'] for row in value['delivery'].values())):
+                raise ValueError('开启定时出稿前，请先设置自动另存目录或启用推送渠道')
             if (incoming.get('target_message_url')
                     and incoming['target_message_url'] != old_link
                     and str(incoming.get('target_author_id') or old_author) == old_author):
@@ -180,10 +192,14 @@ class Credentials:
 
     def __init__(self, root):
         self.path = Path(root) / 'data' / 'credentials.json'
+        self.lock = threading.RLock()
         self.use_keychain = os.environ.get('DISCORD_ARCHIVE_CREDENTIAL_STORE') != 'file'
 
     def get(self, kind):
-        environment = os.environ.get('DISCORD_ARCHIVE_TOKEN' if kind == 'discord' else 'ARCHIVE_MODEL_KEY')
+        environment_name = {'discord': 'DISCORD_ARCHIVE_TOKEN', 'model': 'ARCHIVE_MODEL_KEY',
+            'delivery_email': 'ARCHIVE_SMTP_PASSWORD', 'delivery_telegram': 'ARCHIVE_TELEGRAM_TOKEN',
+            'delivery_discord': 'ARCHIVE_DISCORD_WEBHOOK', 'delivery_clawbot': 'ARCHIVE_CLAWBOT_ACCOUNT'}.get(kind)
+        environment = os.environ.get(environment_name) if environment_name else None
         if environment:
             return environment.strip()
         if self.path.exists():
@@ -200,7 +216,11 @@ class Credentials:
         return None
 
     def set(self, kind, value):
-        if kind not in ('discord', 'model') or not isinstance(value, str) or not value.strip():
+        with self.lock:
+            return self._set(kind, value)
+
+    def _set(self, kind, value):
+        if kind not in ('discord', 'model', 'delivery_email', 'delivery_telegram', 'delivery_discord', 'delivery_clawbot') or not isinstance(value, str) or not value.strip():
             raise ValueError('凭证类型或内容无效')
         value = value.strip()
         if '\n' in value or '\r' in value:

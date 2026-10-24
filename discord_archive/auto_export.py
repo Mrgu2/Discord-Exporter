@@ -141,8 +141,11 @@ class ScheduledExporter:
                 if scale in pending['rendered_scales']:
                     continue
                 result = worker.drafts.render(pending['draft_id'],target=options['target'],render_scale=scale)
+                if any(row.get('enabled') for row in config.get('delivery', {}).values()):
+                    worker.delivery.enqueue_render(result, draft_id=pending['draft_id'], scale=scale, target=options['target'])
                 copied = (result.get('draft') or {}).get('export_copy') or {}
-                if not copied.get('enabled') or copied.get('failed',0) != 0 or copied.get('copied',0) <= 0:
+                needs_copy = bool((config.get('export') or {}).get('copy_directory'))
+                if needs_copy and (not copied.get('enabled') or copied.get('failed',0) != 0 or copied.get('copied',0) <= 0):
                     raise ValueError('自动导出图片未全部另存成功，请检查导出目录后重试')
                 pending['rendered_scales'].append(scale)
                 self._save(pending=pending)

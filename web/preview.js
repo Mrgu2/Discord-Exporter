@@ -9,6 +9,12 @@
   const distance = points => Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
   const midpoint = points => ({x:(points[0].x + points[1].x)/2,y:(points[0].y + points[1].y)/2});
   function element(tag, className, text) { const item=document.createElement(tag);if(className)item.className=className;if(text)item.textContent=text;return item; }
+  function imageDownloadName(value) {
+    try {
+      const name=decodeURIComponent(new URL(value,location.href).pathname.split('/').pop()||'');
+      return name && name!=='.' && name!=='..' && !/[\\/\u0000-\u001f\u007f]/.test(name)?name:'长图.png';
+    } catch { return '长图.png'; }
+  }
   function bound() {
     tx=clamp(tx,-Math.max(0,(fitWidth*scale-stage.clientWidth)/2),Math.max(0,(fitWidth*scale-stage.clientWidth)/2));
     ty=clamp(ty,-Math.max(0,(fitHeight*scale-stage.clientHeight)/2),Math.max(0,(fitHeight*scale-stage.clientHeight)/2));
@@ -50,8 +56,7 @@
     index=clamp(next,0,pages.length-1);const current=++generation;
     message.textContent='正在载入图片…';message.hidden=false;picture.style.visibility='hidden';
     caption.textContent=`${dialog.dataset.title || '长图'} · ${index+1}/${pages.length}`;
-    const density=pages[index].match(/\/scale-([12])\//)?.[1];
-    download.href=pages[index];download.download=density?`${dialog.dataset.title||'稿件'}-${density}x-${String(index+1).padStart(2,'0')}.png`:pages[index].split('/').pop()||'长图.png';
+    download.href=pages[index];download.download=imageDownloadName(pages[index]);
     picture.onload=()=>{if(current!==generation)return;message.hidden=true;picture.style.visibility='visible';reset();};
     picture.onerror=()=>{if(current===generation)message.textContent='图片暂时无法读取，可关闭后重试。';};
     picture.src=pages[index];

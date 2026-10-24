@@ -21,7 +21,7 @@ import zlib
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 from urllib.request import ProxyHandler, Request, build_opener
 from unittest.mock import patch
 
@@ -300,7 +300,7 @@ def verify():
             require(after_recovery['message_count']==9 and after_recovery['version_count']==10,'Recovery duplicated messages or lost edit history')
             return {"status":"passed","temporary_root":str(root),"server_url":base,"server_stopped":True,
                 "source_counts":{"channels":5,"rounds":2,"successful_capture_rounds":3,"failed_capture_rounds":1,"messages":counts["message_count"],"versions":counts["version_count"],"target_messages":draft["message_count"],"latest_round_target_messages":incremental["message_count"],"fake_api_requests":transport.calls,"metadata_requests":transport.metadata_calls},
-                "draft_path":draft["path"],"images":[str(root/path.lstrip("/")) for path in rendered["images"]],
+                "draft_path":draft["path"],"images":[str(root/unquote(path).lstrip("/")) for path in rendered["images"]],
                 "mobile_image_count":len(all_images)-len(rendered["images"]),"image_dimensions":dimensions,
                 "stacked_bands":bands,
                 "phone_auth":{"unauthenticated":401,"paired":200,"remote_browser_connect":403},

@@ -13,8 +13,9 @@ const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42
 // Chrome cancels downloads fulfilled by request interception. Serve only these
 // isolated fictional files through the real local file route for byte QA.
 const fixtureDirectory=fs.mkdtempSync(path.resolve('output/ui-ux-check-'));
-for(const name of ['main-1x.png','main-2x.png'])fs.writeFileSync(path.join(fixtureDirectory,name),png);
-const downloadUrl=scale=>`/output/${path.basename(fixtureDirectory)}/main-${scale}x.png`;
+const downloadNames={1:'答疑存档-2026-10-23-01.png',2:'答疑存档-2026-10-23-HiDPI-01.png'};
+for(const name of Object.values(downloadNames))fs.writeFileSync(path.join(fixtureDirectory,name),png);
+const downloadUrl=scale=>`/output/${path.basename(fixtureDirectory)}/${encodeURIComponent(downloadNames[scale])}`;
 const browser=await chromium.launch({headless:true,executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'});
 const results=[];
 try {
@@ -46,6 +47,7 @@ try {
       return route.fulfill({json:data});
     });
     await context.route('**/output/ui-ux/*.png',route=>{imageRequests.push(route.request().url());return route.fulfill({contentType:'image/png',body:png});});
+    await context.route('**/output/naming-check/**',route=>route.fulfill({contentType:'image/png',body:png}));
     await page.goto(base,{waitUntil:'networkidle'});
     const row=page.locator('#recent-drafts .draft-row').first();
     const density=row.getByRole('combobox',{name:'图片清晰度'});
@@ -62,7 +64,7 @@ try {
     assert.equal(await row.getByRole('button',{name:'更新图片',exact:true}).isEnabled(),true,'1x job locked the 2x variant');
     assert.equal(await row.getByRole('link',{name:'下载图片',exact:true}).getAttribute('href'),downloadUrl(2));
     const download=await Promise.all([page.waitForEvent('download'),row.getByRole('link',{name:'下载图片',exact:true}).click()]);
-    assert.equal(download[0].suggestedFilename(),'虚构语音稿-2x.png');
+    assert.equal(download[0].suggestedFilename(),downloadNames[2]);
     const destination=path.join(directory,`direct-${width}.png`);await download[0].saveAs(destination);
     assert.deepEqual(fs.readFileSync(destination),png);
     assert.equal(await page.locator('.image-preview').count(),0,'Download unnecessarily opened a preview');
@@ -70,6 +72,7 @@ try {
     const select=page.getByRole('combobox',{name:'选择频道'});await select.selectOption('1');
     await page.waitForFunction(()=>document.querySelector('.image-preview img').src.endsWith('/qa1.png'));
     await page.waitForFunction(()=>document.querySelector('.image-preview img').naturalWidth===1);
+    assert.equal(await page.locator('.image-preview a').getAttribute('download'),'qa1.png','Column preview rewrote the published filename');
     await page.locator('.image-preview [data-action="native"]').click();
     await page.waitForFunction(()=>Math.abs(document.querySelector('.image-preview img').getBoundingClientRect().width*devicePixelRatio-1)<.1);
     const nativeWidth=await page.locator('.image-preview img').evaluate(img=>img.getBoundingClientRect().width);
@@ -78,8 +81,23 @@ try {
     assert.ok(await page.locator('.image-preview img').evaluate((img,width)=>img.getBoundingClientRect().width<=width+.01,nativeWidth),'Zooming out after native pixels enlarged a small image');
     await page.locator('.image-preview [data-action="next"]').click();
     await page.waitForFunction(()=>document.querySelector('.image-preview img').src.endsWith('/qa2.png'));
+    assert.equal(await page.locator('.image-preview a').getAttribute('download'),'qa2.png','Next page kept the previous filename');
     assert.equal(await page.locator('.image-preview [data-action="next"]').isDisabled(),true);
     assert.equal(await page.locator('body').evaluate(body=>body.scrollWidth),width);
+    await page.keyboard.press('Escape');
+    const namedPages=[
+      {url:`/output/naming-check/scale-1/${encodeURIComponent('答疑存档-2026-10-23-02.png')}?version=fixture#preview`,name:'答疑存档-2026-10-23-02.png'},
+      {url:`/output/naming-check/scale-2/${encodeURIComponent('答疑存档-2026-10-23-HiDPI-03.png')}`,name:'答疑存档-2026-10-23-HiDPI-03.png'},
+      {url:'/output/naming-check/unsafe%2Fname.png',name:'长图.png'},
+      {url:'/output/naming-check/malformed%ZZ.png',name:'长图.png'},
+    ];
+    await page.evaluate(pages=>window.ArchivePreview.open(pages.map(item=>item.url),'标题不能覆盖文件名 · 2×'),namedPages);
+    for(let index=0;index<namedPages.length;index++) {
+      assert.equal(await page.locator('.image-preview a').getAttribute('download'),namedPages[index].name);
+      if(index<namedPages.length-1) await page.locator('.image-preview [data-action="next"]').click();
+    }
+    await page.locator('.image-preview [data-action="previous"]').click();
+    assert.equal(await page.locator('.image-preview a').getAttribute('download'),namedPages[2].name);
     await page.keyboard.press('Escape');
     await row.getByRole('button',{name:'更新图片',exact:true}).click();
     assert.deepEqual(mutations[1].body,{draft_id:id,target:'main',render_scale:2});
@@ -97,7 +115,7 @@ try {
     assert.deepEqual(mutations.at(-1).body,{draft_id:empty,target:'mobile',render_scale:2});
     const third=page.locator('#recent-drafts .draft-row').nth(2);
     assert.equal(await third.getByRole('link',{name:'下载图片',exact:true}).getAttribute('href'),downloadUrl(1));
-    assert.equal(await third.getByRole('link',{name:'下载图片',exact:true}).getAttribute('download'),'虚构双倍率稿-1x.png');
+    assert.equal(await third.getByRole('link',{name:'下载图片',exact:true}).getAttribute('download'),downloadNames[1]);
     assert.equal(await third.getByRole('button',{name:'生成分栏图',exact:true}).count(),1,'1x variant reused 2x channel images');
     await third.getByRole('combobox',{name:'图片清晰度'}).selectOption('2');
     assert.equal(await third.getByRole('link',{name:'下载图片',exact:true}).getAttribute('href'),downloadUrl(2));
@@ -112,7 +130,7 @@ try {
     await page.screenshot({path:path.join(directory,`workspace-${width}.png`),fullPage:true});
     results.push({width,direct_download_bytes_equal:true,no_preview_for_download:true,channel_jump:true,
       standard_default:true,legacy_density_isolated:true,variant_urls_isolated:true,
-      busy_survives_reload:true,busy_per_density:true,main_and_mobile_separate:true,console_errors:errors.length});
+      published_download_filenames:true,busy_survives_reload:true,busy_per_density:true,main_and_mobile_separate:true,console_errors:errors.length});
     await context.close();
   }
   console.log(JSON.stringify({status:'passed',fictional_only:true,results},null,2));

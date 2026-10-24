@@ -1,4 +1,5 @@
 import json
+import base64
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -112,7 +113,12 @@ class EditorialTests(unittest.TestCase):
         ]
         with patch('discord_archive.editorial.shutil.which',return_value='/fixture/node'), \
                 patch('discord_archive.editorial.subprocess.run') as run:
-            run.side_effect = [type('Result',(),{'returncode':0,'stdout':json.dumps(output)}) for output in outputs]
+            remaining=iter(outputs)
+            def rendered(command,**options):
+                output=next(remaining);destination=Path(command[3]);destination.mkdir(parents=True,exist_ok=True)
+                for image in output['images']:(destination/image).write_bytes(base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAADklEQVR4nGP4DwYMEAoAU7oL9ZisIGcAAAAASUVORK5CYII='))
+                return type('Result',(),{'returncode':0,'stdout':json.dumps(output)})()
+            run.side_effect = rendered
             result = self.service.render(draft['id'],render_scale=2)
         stored = json.loads((Path(draft['path']).parent/'metadata.json').read_text())
         for actual,expected in [(stored,outputs[0]),(stored['single_columns'][0],outputs[1])]:
@@ -129,6 +135,8 @@ class EditorialTests(unittest.TestCase):
         output = {'images':['long-01.png'],'dimensions':[{'width':1060,'height':1500}],'layout_mode':'single'}
         with patch('discord_archive.editorial.shutil.which',return_value='/fixture/node'), \
                 patch('discord_archive.editorial.subprocess.run') as run:
+            destination=Path(draft['path']).parent/'scale-1';destination.mkdir()
+            (destination/'long-01.png').write_bytes(base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAADklEQVR4nGP4DwYMEAoAU7oL9ZisIGcAAAAASUVORK5CYII='))
             run.return_value.returncode = 0
             run.return_value.stdout = json.dumps(output)
             rendered = self.service.render(draft['id'])

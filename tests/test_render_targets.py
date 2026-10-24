@@ -1,9 +1,11 @@
 import json
+import base64
 import tempfile
 import unittest
 import uuid
 from pathlib import Path
 from unittest.mock import patch
+from urllib.parse import unquote
 
 from discord_archive.editorial import DraftService
 from discord_archive import render_cache
@@ -26,9 +28,8 @@ class RenderTargetTests(unittest.TestCase):
     def render(self,command,**options):
         scale=int(command[4]);output=Path(command[3]);output.mkdir(parents=True,exist_ok=True)
         target=output/'long-01.png'
-        # A deterministic PNG header suffices for cache transport tests; actual
-        # PNG decode/CRC coverage lives in png_check and renderer acceptance.
-        target.write_bytes(b'\x89PNG\r\n\x1a\n'+b'\0\0\0\rIHDR'+b'\0\0\0\2\0\0\0\2'+b'fixture')
+        # A real deterministic 2x2 PNG also exercises filename publication.
+        target.write_bytes(base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAADklEQVR4nGP4DwYMEAoAU7oL9ZisIGcAAAAASUVORK5CYII='))
         return type('Result',(),{'returncode':0,'stdout':json.dumps({'images':[str(target)],
             'render_scale':scale,'dimensions':[{'width':2,'height':2}],'css_dimensions':[{'width':2/scale,'height':2/scale}]})})()
 
@@ -116,6 +117,32 @@ class RenderTargetTests(unittest.TestCase):
         self.assertEqual(old['images'],[])
         self.assertEqual(old['single_columns'][0]['images'],['legacy-2x-mobile.png'])
         self.assertEqual(old['single_columns'][0]['render_scale'],2)
+
+    def test_named_urls_are_encoded_and_cached_source_files_remain_compatible(self):
+        metadata=json.loads((self.folder/'metadata.json').read_text())
+        metadata.update(scope='day',selection={'start':'2026-10-23','end':'2026-10-23'},
+            created_at='2026-10-24T06:17:00Z')
+        atomic_json(self.folder/'metadata.json',metadata)
+        with patch('discord_archive.editorial.shutil.which',return_value='/fixture/node'), \
+                patch('discord_archive.editorial.subprocess.run',side_effect=self.render) as runner:
+            first=self.service.render(self.identity,target='main')
+            url=first['images'][0]
+            self.assertTrue(url.isascii(),'HTTP URLs must percent-encode Unicode filenames')
+            self.assertEqual(Path(unquote(url)).name,'答疑存档-2026-10-23-01.png')
+            alias=self.folder/'scale-1'/Path(unquote(url)).name
+            original=self.folder/'scale-1/long-01.png'
+            self.assertEqual(alias.read_bytes(),original.read_bytes())
+            alias.rename(alias.with_name('moved-away.png'))
+            second=self.service.render(self.identity,target='main')
+            self.assertEqual(runner.call_count,1,'Naming an old cache must not rerender')
+            self.assertEqual(second['images'],first['images'])
+            self.assertTrue(alias.is_file(),'Cache publication must restore a missing name')
+            hidpi=self.service.render(self.identity,target='main',render_scale=2)
+            self.assertEqual(Path(unquote(hidpi['images'][0])).name,'答疑存档-2026-10-23-HiDPI-01.png')
+        cache=json.loads((self.folder/'render-cache.json').read_text())
+        for entry in cache.values():
+            self.assertEqual(entry['files'][0]['file'],'long-01.png')
+            self.assertEqual(Path(entry['result']['images'][0]).name,'long-01.png')
 
 
 if __name__ == '__main__':

@@ -39,6 +39,12 @@
     return item;
   }
   function first(...values) { return values.find((value) => value !== undefined && value !== null && value !== ''); }
+  function imageDownloadName(value) {
+    try {
+      const name = decodeURIComponent(new URL(value, location.href).pathname.split('/').pop() || '');
+      return name && name !== '.' && name !== '..' && !/[\\/\u0000-\u001f\u007f]/.test(name) ? name : '长图.png';
+    } catch { return '长图.png'; }
+  }
   function dateValue(value) {
     if (value === undefined || value === null || value === '') return null;
     const parsed = new Date(typeof value === 'number' && value < 1e12 ? value * 1000 : value);
@@ -411,7 +417,7 @@
         const viewImages = node('button', 'text-button', '查看长图'); viewImages.type = 'button';
         viewImages.addEventListener('click', () => openPreview(images, `${draft.title || '稿件长图'} · ${scale}×`)); actions.append(viewImages);
         const download = node('a','text-button',images.length === 1 ? '下载图片' : '下载第 1 张');
-        download.href = images[0]; download.download = `${draft.title || '稿件'}-${scale}x.png`; actions.append(download);
+        download.href = images[0]; download.download = imageDownloadName(images[0]); actions.append(download);
       }
       const columns = variant.single_columns;
       if (columns.length) {

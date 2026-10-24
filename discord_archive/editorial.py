@@ -13,9 +13,11 @@ import threading
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 from .context import build_context, build_context_index
+from .export_names import export_date_label, publish_image
 from .assets import forwarded_texts, iter_message_assets
 from .media import MediaArchive
 from .readability import choose_reading_groups, clean_reading_text
@@ -226,7 +228,9 @@ class DraftService:
             "manuscript_url":f"/output/{identity}/manuscript.md","evidence_url":f"/output/{identity}/evidence.json",
             "archive_url":f"/output/{identity}/archive.html","archive_manuscript_url":f"/output/{identity}/archive.md",
             "date":request.get("date"),"market_timezone":config.get("market_timezone","America/New_York"),
+            "day_boundary_hour":config.get("day_boundary_hour",4),
             "audio":audio_summary}
+        metadata['export_date'] = export_date_label(metadata,seeds=[item['seed'] for item in items],config=config)
         evidence = {"schema_version":1,"title":title,"created_at":now,"selection":selection,
             "target_author_id":author,"warnings":warnings,"groups":source_groups,"contexts":items,"panels":source_panels,"layout":layout,
             "reading":{"decisions":decisions,"visible_panels":panels,"visible_groups":all_groups}}
@@ -540,6 +544,12 @@ class DraftService:
             raise ValueError("生成长图需要 Node.js，请先安装 Node.js 后重试。")
         script = Path(__file__).resolve().parent.parent/"scripts"/"render.mjs"
         metadata = json.loads((folder/"metadata.json").read_text(encoding="utf-8"))
+        if not metadata.get('export_date'):
+            try:
+                evidence = json.loads((folder/'evidence.json').read_text(encoding='utf-8'))
+            except (OSError,ValueError):
+                evidence = None
+            metadata['export_date'] = export_date_label(metadata,evidence=evidence)
         variant_fields = ('images','image_url','rendered_at','layout_mode','image_dimensions','image_coverage',
             'render_scale','css_dimensions','pixel_font_sizes','render_verification','single_columns')
         variants = metadata.setdefault('image_variants',{})
@@ -601,7 +611,9 @@ class DraftService:
         rendered = {}
         if target in {'all','main'}:
             rendered = render_file(folder/"index.html",density_folder,'main')
-            images = [f"/output/{identity}/{density_folder.name}/{Path(path).name}" for path in rendered["images"]]
+            published = [publish_image(density_folder/Path(path).name,metadata,index+1,render_scale=render_scale)
+                for index,path in enumerate(rendered['images'])]
+            images = [f"/output/{identity}/{density_folder.name}/{quote(path.name)}" for path in published]
             variant.update(images=images,rendered_at=iso_time(),image_url=images[0] if images else None,
                 layout_mode=rendered.get("layout_mode"),image_dimensions=rendered.get("dimensions",[]),image_coverage=rendered.get('image_coverage'),
                 render_scale=rendered['render_scale'],css_dimensions=rendered.get('css_dimensions',[]),pixel_font_sizes=rendered.get('pixel_font_sizes',[]),
@@ -612,7 +624,10 @@ class DraftService:
         for column in variant.get("single_columns",[]) if target in {'all','mobile'} else []:
             subfolder = density_folder/f'mobile-{column["channel_id"]}'
             single = render_file(folder/column["file"],subfolder,f'mobile:{column["channel_id"]}')
-            column["images"] = [f'/output/{identity}/{density_folder.name}/{subfolder.name}/{Path(path).name}' for path in single["images"]]
+            published = [publish_image(subfolder/Path(path).name,metadata,index+1,
+                render_scale=render_scale,channel_title=column.get('title') or column['channel_id'])
+                for index,path in enumerate(single['images'])]
+            column["images"] = [f'/output/{identity}/{density_folder.name}/{subfolder.name}/{quote(path.name)}' for path in published]
             column['image_coverage'] = single.get('image_coverage')
             column.update(image_dimensions=single.get('dimensions',[]),render_scale=single['render_scale'],
                 css_dimensions=single.get('css_dimensions',[]),pixel_font_sizes=single.get('pixel_font_sizes',[]))

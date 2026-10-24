@@ -122,6 +122,14 @@ class CredentialRecoveryTests(unittest.TestCase):
         settings.update({'target_message_url':'https://discord.com/channels/1/2/5','target_author_id':'200'})
         self.assertEqual(settings.read()['target_author_id'], '200')
 
+    def test_channel_kind_uses_explicit_configuration_not_a_personal_label(self):
+        settings=Settings(self.root)
+        for label in ('示例问答', '普通栏目'):
+            settings.update({'channels':[{'id':'100','label':label}]})
+            self.assertEqual(settings.read()['channels'][0]['kind'], 'feed')
+            settings.update({'channels':[{'id':'100','label':label,'kind':'qa'}]})
+            self.assertEqual(settings.read()['channels'][0]['kind'], 'qa')
+
     def test_deselected_channels_remain_available_after_config_roundtrip(self):
         settings=Settings(self.root)
         settings.update({'channels':[{'id':'100','label':'答疑','kind':'qa','enabled':False}]})

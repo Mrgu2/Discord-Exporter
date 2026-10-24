@@ -160,7 +160,7 @@ class Settings:
                 if not identity.isdigit():
                     raise ValueError('频道 ID 须为数字或有效消息链接')
                 label = row.get('label', '') if isinstance(row, dict) else ''
-                kind = row.get('kind', 'qa' if '示例问答' in label else 'feed') if isinstance(row, dict) else 'feed'
+                kind = row.get('kind', 'feed') if isinstance(row, dict) else 'feed'
                 enabled = row.get('enabled', True) is not False if isinstance(row, dict) else True
                 normalized.append({'id': identity, 'label': label, 'kind': kind if kind in ('qa', 'feed') else 'feed', 'enabled': enabled})
             value['channels'] = list({row['id']: row for row in normalized}.values())

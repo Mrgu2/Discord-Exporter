@@ -32,6 +32,10 @@ from .store import iso_time, parse_time
 ACKNOWLEDGEMENTS = {"对", "对的", "是", "是的", "嗯", "嗯嗯", "好", "好的", "没错", "是这样", "谢谢", "可以", "不", "不是", "yes", "no", "ok", "okay"}
 
 
+class EmptyDraft(ValueError):
+    """A valid selection has no content to publish; safe for timed skips."""
+
+
 def _key(message):
     return message["channel_id"],message["message_id"]
 
@@ -152,8 +156,8 @@ class DraftService:
         items = [item for bundle in bundles for item in bundle["items"]]
         if not items:
             if selection["scope"] == "latest":
-                raise ValueError("最近一轮没有新增或编辑的群主发言；可选择整个交易日查看已保存内容。")
-            raise ValueError("所选范围没有已保存的群主发言，请调整范围或先保存一轮")
+                raise EmptyDraft("最近一轮没有新增或编辑的群主发言；可选择整个交易日查看已保存内容。")
+            raise EmptyDraft("所选范围没有已保存的群主发言，请调整范围或先保存一轮")
         groups = self._group(items)
         panels = []
         for bundle in bundles:
@@ -214,7 +218,7 @@ class DraftService:
                 panels = visible_panels
                 all_groups = [group for panel in panels for group in panel['groups']]
             if not all_groups:
-                raise ValueError('这个范围只有闲聊或简短回应，可切换“完整原文”查看。')
+                raise EmptyDraft('这个范围只有闲聊或简短回应，可切换“完整原文”查看。')
         visible_answers = {_key(message) for group in all_groups for message in group['answers']}
         identity = str(uuid.uuid4())
         folder = self.output/identity

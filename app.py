@@ -305,8 +305,10 @@ def make_handler(application):
                             and exports['copy_directory'] != old.get('export', {}).get('copy_directory', '')):
                         return self.send(403, {'error': '自动另存目录请在 Mac 本机修改'})
                     result = app.settings.update(data)
-                    if {key:value for key,value in old.items() if key != 'export'} != {
-                            key:value for key,value in result.items() if key != 'export'}:
+                    if 'auto_export' in data:
+                        app.worker.configure_auto_export(result)
+                    if {key:value for key,value in old.items() if key not in {'export','auto_export'}} != {
+                            key:value for key,value in result.items() if key not in {'export','auto_export'}}:
                         app.worker.reset_attention()
                     return self.send(200, result)
                 if path == '/api/export-directory' and self.command == 'POST':

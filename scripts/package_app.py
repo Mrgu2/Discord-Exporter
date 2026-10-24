@@ -25,6 +25,7 @@ SOURCE_ALLOWLIST = (
     "discord_archive/browser_login.py", "discord_archive/collector.py",
     "discord_archive/context.py", "discord_archive/editorial.py",
     "discord_archive/export_names.py", "discord_archive/export_copy.py",
+    "discord_archive/export_schedule.py", "discord_archive/auto_export.py",
     "discord_archive/media.py", "discord_archive/readability.py",
     "discord_archive/render_cache.py", "discord_archive/scheduler.py",
     "discord_archive/settings.py", "discord_archive/speech.py",
@@ -33,6 +34,7 @@ SOURCE_ALLOWLIST = (
     "scripts/desktop_launcher.py", "scripts/install_service.py",
     "scripts/package_app.py", "scripts/png.mjs", "scripts/render.mjs",
     "scripts/transcribe_local.py", "scripts/verify_workflow.py",
+    "scripts/verify_auto_export.py",
     "web/app.js", "web/index.html", "web/manuscript.css", "web/preview.css",
     "web/preview.js", "web/reading.css", "web/style.css", "docs/PACKAGING.md",
 )
@@ -41,6 +43,7 @@ OPTIONAL_SOURCE_ALLOWLIST = (
     "scripts/benchmark_scaling.py", "tests/test_draft_listing.py", "docs/SCALING.md",
     "scripts/benchmark_draft_listing.py", "tests/test_benchmark_scaling.py", "tests/draft_library_check.mjs",
     "tests/test_export_names.py", "tests/test_export_copy.py", "tests/export_settings_check.mjs",
+    "tests/test_export_schedule.py", "tests/test_auto_export.py", "tests/test_auto_export_integration.py", "tests/auto_export_check.mjs",
     "tests/test_packaging.py", "tests/test_settings.py", "tests/test_render_targets.py",
     "tests/test_collector_scheduler.py", "tests/test_benchmark_history.py",
     "tests/test_store_context.py", "tests/test_server.py", "tests/test_worker.py",

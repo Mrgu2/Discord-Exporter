@@ -30,6 +30,7 @@
   let savingChannels = false;
   let loginRequired = false;
   const isLocal = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(location.hostname);
+  const autoExportDefaults = { enabled: false, times: ['16:15'], weekdays: [0, 1, 2, 3, 4], render_scales: [1], layout: 'horizontal', presentation: 'reading', target: 'main' };
   const exportDefaults = { name_prefix: '答疑存档', date_format: 'YYYY-MM-DD', sequence_digits: 2, separator: '-', copy_directory: '' };
   function displayTimezone() { return publicConfig.timezone && publicConfig.timezone !== 'auto' ? publicConfig.timezone : Intl.DateTimeFormat().resolvedOptions().timeZone; }
 
@@ -151,6 +152,19 @@
     $('export-separator').value = exports.separator;
     $('export-copy-directory').value = exports.copy_directory || '';
     updateExportPreview();
+    const autoExport = { ...autoExportDefaults, ...publicConfig.auto_export };
+    $('auto-export-enabled').checked = Boolean(autoExport.enabled);
+    $('auto-export-times').value = autoExport.times.join(', ');
+    const weekdays = [...autoExport.weekdays].sort().join(',');
+    const daysOption = weekdays === '0,1,2,3,4' ? 'weekdays' : weekdays === '0,1,2,3,4,5,6' ? 'daily' : 'custom';
+    if (daysOption === 'custom' && !$('auto-export-weekdays').querySelector('[value="custom"]')) {
+      const option = node('option', '', '自定义执行日'); option.value = 'custom'; $('auto-export-weekdays').append(option);
+    }
+    $('auto-export-weekdays').value = daysOption;
+    $('auto-export-scales').value = autoExport.render_scales.length === 2 ? 'both' : String(autoExport.render_scales[0]);
+    $('auto-export-layout').value = autoExport.layout;
+    $('auto-export-presentation').value = autoExport.presentation;
+    $('auto-export-columns').checked = autoExport.target === 'all';
     if (!configInitialized) $('draft-mode').value = 'evidence';
     configInitialized = true;
   }
@@ -179,12 +193,33 @@
     } catch (error) { showToast(error.message, true); }
     finally { button.disabled = false; button.textContent = '选择文件夹'; }
   }
+  function renderAutoExportState(state) {
+    const autoExport = state.auto_export || {};
+    const enabled = autoExport.enabled ?? publicConfig.auto_export?.enabled ?? false;
+    text('auto-export-next', enabled ? autoExport.next_at ? dateTime(autoExport.next_at, true) : '等待计划' : '未启用');
+    const stages = { capture: '正在保存频道', capture_partial: '频道保存未完整', draft: '正在整理稿件', render: '正在生成图片', copy: '正在另存文件' };
+    const failedStages = { capture: '频道保存未完成', capture_partial: '频道保存未完整', draft: '稿件整理未完成', render: '图片生成未完成', copy: '文件另存未完成' };
+    const statuses = { ...statusNames, idle: '尚未执行', skipped: '该交易日无可导出发言', paused: '已暂停', disabled: '未启用' };
+    const stageLabel = autoExport.last_status === 'running' ? stages[autoExport.stage] : ['failed', 'error'].includes(autoExport.last_status) ? failedStages[autoExport.stage] : null;
+    let label = stageLabel || statuses[autoExport.last_status] || (autoExport.last_status ? '等待处理' : '尚未执行');
+    if (autoExport.retry_at) label += ` · ${dateTime(autoExport.retry_at, true)} 重试`;
+    else if (autoExport.last_completed_at && autoExport.last_status === 'success') label += ` · ${dateTime(autoExport.last_completed_at, true)}`;
+    text('auto-export-status', label);
+    $('auto-export-error').hidden = !autoExport.last_error;
+    text('auto-export-error', autoExport.last_error || '');
+    const lastDraft = autoExport.last_draft_id;
+    const link = $('auto-export-last-draft');
+    link.hidden = !lastDraft;
+    if (lastDraft) link.href = `/drafts/${encodeURIComponent(String(lastDraft))}/`;
+    else link.removeAttribute('href');
+  }
   function renderState(data) {
     remoteRenderJobs = data.state?.render_jobs || [];
     snapshot = data;
     const config = data.config || publicConfig;
     hydrateConfig(config);
     const state = data.state || {};
+    renderAutoExportState(state);
     if (state.market_day && !draftDatesTouched) {
       for (const id of ['draft-date', 'draft-start', 'draft-end']) $(id).value = state.market_day;
     }
@@ -620,7 +655,21 @@
         exportOptions.copy_directory = $('export-copy-directory').value.trim();
         if (exportOptions.copy_directory && !/^(\/|~\/|~$)/.test(exportOptions.copy_directory)) throw new Error('另存目录请填写 Mac 上的绝对路径，或选择文件夹。');
       } else delete exportOptions.copy_directory;
-      const nextConfig = { ...publicConfig, export: exportOptions, channels: parseChannels($('channels').value), target_author_id: authorId, target_message_url: targetMessageURL, timezone, market_timezone: marketTimezone, day_boundary_hour: boundary, schedule: { ...publicConfig.schedule, enabled: $('schedule-enabled').checked, interval_minutes: interval, times: parseTimes($('times').value), timezone: marketTimezone, window: { ...publicConfig.schedule?.window, enabled: $('window-enabled').checked, start: $('window-start').value, end: $('window-end').value, every_minutes: windowEvery, weekdays: [0, 1, 2, 3, 4] } }, model: { ...publicConfig.model, enabled: modelEnabled, base_url: $('model-base-url').value.trim(), model: $('model-name').value.trim() } };
+      const autoExportEnabled = $('auto-export-enabled').checked;
+      const autoExportTimes = parseTimes($('auto-export-times').value);
+      if (autoExportEnabled && !autoExportTimes.length) throw new Error('请填写至少一个纽约时间出稿时刻。');
+      if (autoExportTimes.length > 24) throw new Error('出稿时刻最多设置 24 个。');
+      const copyDirectory = isLocal ? exportOptions.copy_directory : publicConfig.export?.copy_directory;
+      if (autoExportEnabled && !String(copyDirectory || '').trim()) throw new Error(isLocal ? '请先在上方选择自动另存目录，再启用定时出稿。' : '请先在 Mac 上设置自动另存目录，再启用定时出稿。');
+      const autoExportDays = $('auto-export-weekdays').value;
+      const autoExportScales = $('auto-export-scales').value;
+      const autoExport = { ...autoExportDefaults, ...publicConfig.auto_export, enabled: autoExportEnabled,
+        times: autoExportTimes.length ? autoExportTimes : autoExportDefaults.times,
+        weekdays: autoExportDays === 'daily' ? [0, 1, 2, 3, 4, 5, 6] : autoExportDays === 'custom' ? publicConfig.auto_export.weekdays : [0, 1, 2, 3, 4],
+        render_scales: autoExportScales === 'both' ? [1, 2] : [Number(autoExportScales)],
+        layout: $('auto-export-layout').value, presentation: $('auto-export-presentation').value,
+        target: $('auto-export-columns').checked ? 'all' : 'main' };
+      const nextConfig = { ...publicConfig, export: exportOptions, auto_export: autoExport, channels: parseChannels($('channels').value), target_author_id: authorId, target_message_url: targetMessageURL, timezone, market_timezone: marketTimezone, day_boundary_hour: boundary, schedule: { ...publicConfig.schedule, enabled: $('schedule-enabled').checked, interval_minutes: interval, times: parseTimes($('times').value), timezone: marketTimezone, window: { ...publicConfig.schedule?.window, enabled: $('window-enabled').checked, start: $('window-start').value, end: $('window-end').value, every_minutes: windowEvery, weekdays: [0, 1, 2, 3, 4] } }, model: { ...publicConfig.model, enabled: modelEnabled, base_url: $('model-base-url').value.trim(), model: $('model-name').value.trim() } };
       button.disabled = true; button.textContent = '正在保存…';
       const result = await api('/api/config', { method: 'PUT', body: JSON.stringify(nextConfig) });
       settingsDirty = false;

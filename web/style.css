@@ -185,6 +185,8 @@ th:first-child { width: 23%; } th:nth-child(2) { width: 17%; } th:nth-child(3) {
 .export-directory-row input { min-width: 0; flex: 1; }
 .export-directory-row .button { flex-shrink: 0; }
 .export-directory-row input[readonly] { color: var(--muted); }
+.auto-export-state { margin-top: 20px; }
+#auto-export-last-draft { margin-top: 8px; }
 .export-copy-error { border: 0; padding: 0; background: none; font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .toggle-row { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 16px; font-size: 14px; color: var(--ink); cursor: pointer; min-height: 40px; }
 .toggle-row input { position: absolute; right: 0; opacity: 0; width: 36px; height: 40px; margin: 0; }

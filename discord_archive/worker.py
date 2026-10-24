@@ -13,6 +13,7 @@ from .speech import SpeechArchive
 from .scheduler import due, market_day
 from .settings import atomic_json, message_location
 from .store import parse_time, utc_now
+from .auto_export import ScheduledExporter
 
 
 class Worker:
@@ -47,8 +48,16 @@ class Worker:
         if deadline and deadline > datetime.now(timezone.utc):
             self.state['retry_at'] = deadline.isoformat()
         self._queued_capture = False
+        self._queued_auto_export = False
+        self.auto_export = ScheduledExporter(root)
         self._render_jobs = {}
         self._last_schedule_slot = None
+        self.configure_auto_export(self.settings.read())
+
+    def configure_auto_export(self, config):
+        # Activation must be durable even while the serialized worker is busy
+        # capturing. This only records schedule state; it does not run a job.
+        self.auto_export.due(config,datetime.now(timezone.utc))
 
     def persist(self):
         with self.lock:
@@ -61,6 +70,8 @@ class Worker:
 
     def submit(self, kind, payload=None):
         with self.lock:
+            if kind == 'auto_export' and self._queued_auto_export:
+                raise ValueError('已有定时出稿任务在进行或等待')
             if kind == 'render':
                 payload = {**(payload or {})}
                 payload.setdefault('target','main')
@@ -87,6 +98,8 @@ class Worker:
             identifier = uuid.uuid4().hex
             if kind == 'render':
                 self._render_jobs[(payload.get('draft_id'),payload['target'],payload['render_scale'])] = identifier
+            if kind == 'auto_export':
+                self._queued_auto_export = True
             self.jobs.put({'id': identifier, 'type': kind, 'payload': payload or {}})
             return {'id': identifier, 'status': 'queued', 'type': kind}
 
@@ -173,13 +186,17 @@ class Worker:
                 next_schedule_check = time.monotonic() + 10
                 try:
                     config = self.settings.read()
+                    export_slot = self.auto_export.due(config,now)
                     if self.credentials.get('discord') and any(row.get('enabled', True) for row in config.get('channels', [])) and not self.state.get('requires_attention'):
                         retry = parse_time(self.state.get('retry_at'))
                         slot = due(config, now, self.state.get('last_success_at'), self.state.get('last_slot'))
                         ready_retry = retry and now >= retry
                         allowed_schedule = slot and (not retry or now >= retry)
-                        if (ready_retry or allowed_schedule) and not self._queued_capture and not self.state.get('active_job'):
-                            self.submit('capture', {'trigger': 'reconnect' if ready_retry else 'scheduled', 'slot': slot})
+                        if not self._queued_capture and not self._queued_auto_export and not self.state.get('active_job'):
+                            if export_slot and (not retry or now >= retry):
+                                self.submit('auto_export',{'slot':export_slot})
+                            elif ready_retry or allowed_schedule:
+                                self.submit('capture', {'trigger': 'reconnect' if ready_retry else 'scheduled', 'slot': slot})
                     self.persist()
                 except Exception:
                     with self.lock:
@@ -191,12 +208,14 @@ class Worker:
             with self.lock:
                 self.state.update(status='running', active_job={'type': job['type'], 'id': job['id'],
                     **({key:job['payload'].get(key) for key in ('draft_id','target','render_scale')} if job['type'] == 'render' else {}),
-                    'message': {'capture': '正在保存频道与回复上下文', 'draft': '正在生成稿件', 'render': '正在生成分栏图' if job['payload'].get('target') == 'mobile' else '正在生成高清主图', 'import': '正在导入存档', 'connect_browser': '请在新打开的 Discord 窗口中登录'}.get(job['type'], '处理中')})
+                    'message': {'capture': '正在保存频道与回复上下文', 'auto_export': '正在保存并导出交易日稿件', 'draft': '正在生成稿件', 'render': '正在生成分栏图' if job['payload'].get('target') == 'mobile' else '正在生成高清主图', 'import': '正在导入存档', 'connect_browser': '请在新打开的 Discord 窗口中登录'}.get(job['type'], '处理中')})
                 self.persist()
             try:
                 if job['type'] == 'capture':
                     result = self.capture(job['payload'])
                     self.state['last_slot'] = job['payload'].get('slot') or self.state.get('last_slot')
+                elif job['type'] == 'auto_export':
+                    result = self.auto_export.run(self,job['payload']['slot'])
                 elif job['type'] == 'draft':
                     result = self.drafts.generate(job['payload'])
                 elif job['type'] == 'render':
@@ -219,7 +238,7 @@ class Worker:
                 with self.lock:
                     safe = str(exc) if isinstance(exc, (DiscordAPIError, ValueError, RuntimeError)) else '任务未完成，请查看本机日志或配置'
                     self.state.update(last_job_id=job['id'], last_job_status='failed', last_job_error=safe)
-                    if job['type'] == 'capture':
+                    if job['type'] == 'capture' or (job['type'] == 'auto_export' and self.auto_export.stage == 'capture'):
                         failures = self.state.get('failures', 0) + 1
                         if isinstance(exc, (AuthRequired, AccessDenied)):
                             self.state.update(requires_attention=True, retry_at=None)
@@ -236,6 +255,8 @@ class Worker:
                     self.state.update(active_job=None, status='idle')
                     if job['type'] == 'capture':
                         self._queued_capture = False
+                    if job['type'] == 'auto_export':
+                        self._queued_auto_export = False
                     if job['type'] == 'render':
                         self._render_jobs.pop((job['payload'].get('draft_id'),job['payload'].get('target','main'),job['payload'].get('render_scale',1)),None)
                     self.persist()
@@ -252,6 +273,7 @@ class Worker:
         state['render_jobs'] = [{key:job.get(key) for key in ('id','type','draft_id','target','render_scale')}
             for job in [state.get('active_job') or {}, *[{**job,**job['payload']} for job in queued]] if job.get('type') == 'render']
         config = self.settings.read()
+        state['auto_export'] = self.auto_export.summary(config,now)
         state['market_day'] = market_day(now, config['market_timezone'], config.get('day_boundary_hour', 4))
         # Search the next day's minute slots in UTC, including DST transitions.
         next_time = None

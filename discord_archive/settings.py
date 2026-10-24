@@ -9,6 +9,7 @@ import threading
 import unicodedata
 from pathlib import Path
 from zoneinfo import ZoneInfo
+from .export_schedule import AUTO_EXPORT_DEFAULTS, normalize_auto_export
 
 DEFAULT_CONFIG = {
     'channels': [],
@@ -22,6 +23,7 @@ DEFAULT_CONFIG = {
     'speech': {'enabled': True, 'language': 'zh', 'model_path': '', 'python': ''},
     'export': {'name_prefix': '答疑存档', 'date_format': 'YYYY-MM-DD',
         'sequence_digits': 2, 'separator': '-', 'copy_directory': ''},
+    'auto_export': copy.deepcopy(AUTO_EXPORT_DEFAULTS),
 }
 
 
@@ -102,6 +104,7 @@ class Settings:
             if not isinstance(saved_export,dict):
                 raise ValueError('导出设置须为对象')
             value['export'] = normalize_export_preferences(saved_export,validate_directory=False)
+            value['auto_export'] = normalize_auto_export(value.get('auto_export',{}))
             return value
 
     def update(self, incoming):
@@ -118,9 +121,16 @@ class Settings:
                         if not isinstance(content,dict):
                             raise ValueError('导出设置须为对象')
                         value[key] = {**value['export'],**content}
+                    elif key == 'auto_export':
+                        if not isinstance(content,dict):
+                            raise ValueError('自动导出设置须为对象')
+                        value[key] = {**value['auto_export'],**content}
                     else:
                         value[key] = content
             value['export'] = normalize_export_preferences(value['export'])
+            value['auto_export'] = normalize_auto_export(value['auto_export'])
+            if value['auto_export']['enabled'] and not value['export']['copy_directory']:
+                raise ValueError('开启定时出稿前，请先在 Mac 上设置自动另存目录')
             if (incoming.get('target_message_url')
                     and incoming['target_message_url'] != old_link
                     and str(incoming.get('target_author_id') or old_author) == old_author):

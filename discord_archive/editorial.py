@@ -621,7 +621,11 @@ class DraftService:
                 return cached
             result = subprocess.run([node,str(script),str(input_path),str(output_path),str(render_scale)],capture_output=True,text=True,timeout=180)
             if result.returncode:
-                safe_error = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "浏览器渲染失败"
+                lines = [line.strip() for line in result.stderr.splitlines() if line.strip()]
+                # Playwright appends JavaScript stack frames to its message.
+                # Keep the actual error instead of the last anonymous frame.
+                safe_error = next((line for line in lines if 'Error:' in line and not line.startswith('at ')),
+                    next((line for line in lines if not line.startswith(('at ','Node.js '))),"浏览器渲染失败"))
                 raise ValueError(safe_error[:500])
             rendered = json.loads(result.stdout)
             # Older renderer results describe 1x pixels; never label them HiDPI.
@@ -633,7 +637,7 @@ class DraftService:
                 cache[cache_key] = saved
                 atomic_json(cache_path,cache)
             return rendered
-        verification_keys=('source_coverage','image_coverage','text_coverage','reading_order','topic_integrity','body_font_sizes','blank_ratio','structure','raster_tiles','bands','render_scale','css_dimensions','pixel_font_sizes')
+        verification_keys=('source_coverage','image_coverage','text_coverage','reading_order','topic_integrity','topic_manifest','geometry','page_count','page_layouts','body_font_sizes','blank_ratio','structure','raster_tiles','bands','render_scale','css_dimensions','pixel_font_sizes')
         identity = folder.name
         rendered = {}
         if target in {'all','main'}:

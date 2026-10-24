@@ -94,91 +94,150 @@ async function main() {
         if(stacked || horizontal) {
           const feeds=sourcePanels.map((panel,index)=>panel.dataset.kind==='feed'?index:null).filter(index=>index!==null);
           const questions=sourcePanels.map((panel,index)=>panel.dataset.kind!=='feed'?index:null).filter(index=>index!==null);
-          const qaEntries=questions.flatMap(panelEntries).filter(entry=>!entry.element.hasAttribute('data-archive-warnings'));
+          const flowEntries=[...feeds,...questions].flatMap(panelEntries).filter(entry=>!entry.element.hasAttribute('data-archive-warnings'));
+          const notices=[...original.querySelectorAll('[data-archive-warnings]')];
+          const qaEntries=flowEntries.filter(entry=>sourcePanels[entry.panel].dataset.kind!=='feed');
           const columns=Math.min(4,Math.max(feeds.length,Math.ceil(qaEntries.length/6),1));
           const columnWidth=1002,gutter=36,bandGap=48;
-          let width=120+columns*columnWidth+(columns-1)*gutter;
-          const canvas=document.createElement('div');canvas.className='render-page composition-page '+(horizontal?'side-by-side-page':'stacked-page');canvas.style.width=width+'px';
-          const heading=document.createElement('div');heading.className='page-heading';heading.textContent=title;
-          const sub=document.createElement('div');sub.className='page-subtitle';sub.textContent=subtitle;
-          canvas.append(heading,sub);holder.append(canvas);
-          const bandHolder=horizontal?document.createElement('div'):canvas;
-          if(horizontal){bandHolder.className='side-by-side-bands';bandHolder.style.cssText='display:flex;gap:48px;align-items:flex-start';canvas.append(bandHolder);}
-          const models=[];
-          const prepareBand=(kind,entries,sharedTitle=false)=>{
-            if(!entries.length)return;
-            const band=document.createElement('section');band.className='stacked-band';band.dataset.bandKind=kind;band.style.flex='none';
-            const row=document.createElement('div');row.className='composition-lanes';band.append(row);bandHolder.append(band);
-            if(sharedTitle){const h2=document.createElement('h2');h2.className='category-title';h2.textContent=titleFor(entries[0].panel);band.prepend(h2);}
-            const probe=document.createElement('section');probe.className='content-panel';
-            const measure=document.createElement('div');measure.className='composition-lane';measure.style.width=columnWidth+'px';measure.append(probe);row.append(measure);
-            const weights=entries.map(entry=>{
-              const copy=entry.element.cloneNode(true);probe.append(copy);
-              const weight=copy.getBoundingClientRect().height+parseFloat(getComputedStyle(copy).marginBottom);
-              copy.remove();return weight;
-            });measure.remove();models.push({kind,band,row,entries,weights,sharedTitle});
-          };
-          const populate=(model,count)=>{
-            const {band,row,entries,weights,sharedTitle}=model;
-            row.replaceChildren();row.style.gridTemplateColumns=`repeat(${count},minmax(0,1fr))`;
-            band.style.width=(count*columnWidth+(count-1)*gutter)+'px';
-            const target=Math.min(count,entries.length);
-            const partition=limit=>{
-              const parts=[[]];let load=0;
-              entries.forEach((entry,index)=>{
-                if(parts.at(-1).length && (load+weights[index]>limit || entries.length-index===target-parts.length)){parts.push([]);load=0;}
-                parts.at(-1).push(entry);load+=weights[index];
-              });return parts;
+          const fits=(width,height)=>width<=MAX_CANVAS_WIDTH && height<=MAX_CANVAS_WIDTH && width*height<=MAX_CANVAS_PIXELS;
+          const compose=(entries,includeNotice,paginated=false)=>{
+            let width=120+columns*columnWidth+(columns-1)*gutter;
+            const canvas=document.createElement('div');canvas.className='render-page composition-page '+(horizontal?'side-by-side-page':'stacked-page');canvas.style.width=width+'px';
+            const heading=document.createElement('div');heading.className='page-heading';heading.textContent=title;
+            const sub=document.createElement('div');sub.className='page-subtitle';sub.textContent=subtitle;
+            canvas.append(heading,sub);holder.append(canvas);
+            const bandHolder=horizontal?document.createElement('div'):canvas;
+            if(horizontal){bandHolder.className='side-by-side-bands';bandHolder.style.cssText='display:flex;gap:48px;align-items:flex-start';canvas.append(bandHolder);}
+            const models=[];
+            const prepareBand=(kind,bandEntries,sharedTitle=false)=>{
+              if(!bandEntries.length)return;
+              const band=document.createElement('section');band.className='stacked-band';band.dataset.bandKind=kind;band.style.flex='none';
+              const row=document.createElement('div');row.className='composition-lanes';band.append(row);bandHolder.append(band);
+              if(sharedTitle){const h2=document.createElement('h2');h2.className='category-title';h2.textContent=titleFor(bandEntries[0].panel);band.prepend(h2);}
+              const probe=document.createElement('section');probe.className='content-panel';
+              const measure=document.createElement('div');measure.className='composition-lane';measure.style.width=columnWidth+'px';measure.append(probe);row.append(measure);
+              const weights=bandEntries.map(entry=>{
+                if(entry.weight!==undefined)return entry.weight;
+                const copy=entry.element.cloneNode(true);probe.append(copy);
+                const weight=copy.getBoundingClientRect().height+parseFloat(getComputedStyle(copy).marginBottom);
+                copy.remove();entry.weight=weight;return weight;
+              });measure.remove();models.push({kind,band,row,entries:bandEntries,weights,sharedTitle});
             };
-            let low=Math.max(...weights),high=weights.reduce((sum,value)=>sum+value,0);
-            while(high-low>1){const middle=(low+high)/2;if(partition(middle).length>target)low=middle;else high=middle;}
-            const parts=partition(high),seen=new Set();
-            for(const part of parts) {
-              const lane=document.createElement('div');lane.className='composition-lane';row.append(lane);
-              let section,identity;
-              for(const entry of part) {
-                if(identity!==entry.panel) {
-                  section=document.createElement('section');section.className='content-panel';identity=entry.panel;
-                  if(!sharedTitle){const h2=document.createElement('h2');h2.className='category-title';h2.textContent=titleFor(identity)+(seen.has(identity)?'（续）':'');section.append(h2);}
-                  lane.append(section);seen.add(identity);
+            const populate=(model,count)=>{
+              const {band,row,entries,weights,sharedTitle}=model;
+              row.replaceChildren();row.style.gridTemplateColumns=`repeat(${count},minmax(0,1fr))`;
+              band.style.width=(count*columnWidth+(count-1)*gutter)+'px';
+              const target=Math.min(count,entries.length);
+              const partition=limit=>{
+                const parts=[[]];let load=0;
+                entries.forEach((entry,index)=>{
+                  if(parts.at(-1).length && (load+weights[index]>limit || entries.length-index===target-parts.length)){parts.push([]);load=0;}
+                  parts.at(-1).push(entry);load+=weights[index];
+                });return parts;
+              };
+              let low=Math.max(...weights),high=weights.reduce((sum,value)=>sum+value,0);
+              while(high-low>1){const middle=(low+high)/2;if(partition(middle).length>target)low=middle;else high=middle;}
+              const parts=partition(high),seen=new Set();
+              for(const part of parts) {
+                const lane=document.createElement('div');lane.className='composition-lane';row.append(lane);
+                let section,identity;
+                for(const entry of part) {
+                  if(identity!==entry.panel) {
+                    section=document.createElement('section');section.className='content-panel';identity=entry.panel;
+                    if(!sharedTitle){const h2=document.createElement('h2');h2.className='category-title';h2.textContent=titleFor(identity)+(seen.has(identity)?'（续）':'');section.append(h2);}
+                    lane.append(section);seen.add(identity);
+                  }
+                  section.append(entry.element.cloneNode(true));
                 }
-                section.append(entry.element.cloneNode(true));
               }
-            }
-            const box=band.getBoundingClientRect(),heights=[...row.children].map(lane=>lane.getBoundingClientRect().height);
-            const tallest=Math.max(...heights);
-            return {count,width:Math.ceil(box.width),height:Math.ceil(box.height),blank:tallest?1-heights.reduce((sum,value)=>sum+value,0)/(count*tallest):0};
+              const box=band.getBoundingClientRect(),heights=[...row.children].map(lane=>lane.getBoundingClientRect().height);
+              const tallest=Math.max(...heights);
+              return {count,width:Math.ceil(box.width),height:Math.ceil(box.height),blank:tallest?1-heights.reduce((sum,value)=>sum+value,0)/(count*tallest):0};
+            };
+            prepareBand('feed',entries.filter(entry=>sourcePanels[entry.panel].dataset.kind==='feed'));
+            prepareBand('qa',entries.filter(entry=>sourcePanels[entry.panel].dataset.kind!=='feed'),questions.length===1);
+            if(includeNotice)for(const notice of notices){const copy=notice.cloneNode(true);copy.classList.add('archive-notice');canvas.append(copy);}
+            if(paginated){const footer=document.createElement('div');footer.className='page-footer';const number=document.createElement('span');number.className='page-number';number.textContent='00 / 00';footer.append(number);canvas.append(footer);}
+            let chosen;
+            if(horizontal && models.length) {
+              // Preserve the existing single-page composition. Only an unsafe
+              // full composition enters the consecutive-topic paginator below.
+              const options=models.map(model=>Array.from({length:Math.min(paginated?12:8,model.entries.length)},(_,index)=>populate(model,index+1)));
+              const headerHeight=Math.ceil(heading.getBoundingClientRect().height+sub.getBoundingClientRect().height)+100;
+              const overhead=paginated || (includeNotice && notices.length>1)
+                ? Math.ceil(canvas.getBoundingClientRect().height-bandHolder.getBoundingClientRect().height):headerHeight;
+              let best;
+              for(const left of options[0])for(const right of options[1]||[null]) {
+                const candidate=right?[left,right]:[left],candidateWidth=120+candidate.reduce((sum,item)=>sum+item.width,0)+(candidate.length-1)*bandGap;
+                const candidateHeight=overhead+Math.max(...candidate.map(item=>item.height));
+                if(!fits(candidateWidth,candidateHeight))continue;
+                const imbalance=right?Math.abs(Math.log(left.height/right.height)):0;
+                const score=Math.abs(Math.log((candidateWidth/candidateHeight)/1.6))+0.35*imbalance+0.6*candidate.reduce((sum,item)=>sum+item.blank,0)+0.002*candidate.reduce((sum,item)=>sum+item.count,0);
+                if(!best || score<best.score)best={score,chosen:candidate,width:candidateWidth};
+              }
+              if(!best){canvas.remove();return null;}
+              width=best.width;canvas.style.width=width+'px';chosen=best.chosen;
+              models.forEach((model,index)=>populate(model,chosen[index].count));
+            } else if(paginated && models.length) {
+              // Large stacked exports may widen their common band width. Keep
+              // small stacked pages at the previously accepted four columns.
+              let best;
+              for(let count=1;count<=12;count++){
+                width=120+count*columnWidth+(count-1)*gutter;canvas.style.width=width+'px';
+                const candidate=models.map(model=>populate(model,count)),height=Math.ceil(canvas.getBoundingClientRect().height);
+                if(!fits(width,height))continue;
+                const score=Math.abs(Math.log((width/height)/1.6))+0.6*candidate.reduce((sum,item)=>sum+item.blank,0)+0.002*count;
+                if(!best || score<best.score)best={score,count,width};
+              }
+              if(!best){canvas.remove();return null;}
+              width=best.width;canvas.style.width=width+'px';chosen=models.map(model=>populate(model,best.count));
+            } else chosen=models.map(model=>populate(model,columns));
+            const height=Math.ceil(canvas.getBoundingClientRect().height);
+            if(!fits(width,height)){canvas.remove();return null;}
+            let usedArea=0,totalArea=0;
+            for(const {band} of models){const boxes=[...band.querySelectorAll('.composition-lane')].map(lane=>lane.getBoundingClientRect());const tallest=Math.max(...boxes.map(box=>box.height));usedArea+=boxes.reduce((sum,box)=>sum+box.width*box.height,0);totalArea+=boxes.reduce((sum,box)=>sum+box.width*tallest,0);}
+            return {canvas,width,height,usedArea,totalArea,columns:horizontal?models.reduce((sum,model)=>sum+model.row.children.length,0):undefined,
+              bands:models.map(({band})=>({kind:band.dataset.bandKind,columns:band.querySelectorAll('.composition-lane').length,
+                x:Math.round(band.getBoundingClientRect().x-canvas.getBoundingClientRect().x),y:Math.round(band.getBoundingClientRect().y-canvas.getBoundingClientRect().y),
+                width:Math.round(band.getBoundingClientRect().width),height:Math.ceil(band.getBoundingClientRect().height)}))};
           };
-          prepareBand('feed',feeds.flatMap(panelEntries).filter(entry=>!entry.element.hasAttribute('data-archive-warnings')));
-          prepareBand('qa',qaEntries,questions.length===1);
-          if(horizontal && models.length) {
-            // Keep the two semantic sections beside each other. Allocate each
-            // section its own consecutive columns and balance their heights.
-            const options=models.map(model=>Array.from({length:Math.min(8,model.entries.length)},(_,index)=>populate(model,index+1)));
-            const headerHeight=Math.ceil(heading.getBoundingClientRect().height+sub.getBoundingClientRect().height)+100;
-            let best;
-            for(const left of options[0])for(const right of options[1]||[null]) {
-              const chosen=right?[left,right]:[left],candidateWidth=120+chosen.reduce((sum,item)=>sum+item.width,0)+(chosen.length-1)*bandGap;
-              const candidateHeight=headerHeight+Math.max(...chosen.map(item=>item.height));
-              if(candidateWidth>MAX_CANVAS_WIDTH || candidateHeight>MAX_CANVAS_WIDTH || candidateWidth*candidateHeight>MAX_CANVAS_PIXELS)continue;
-              const imbalance=right?Math.abs(Math.log(left.height/right.height)):0;
-              const score=Math.abs(Math.log((candidateWidth/candidateHeight)/1.6))+0.35*imbalance+0.6*chosen.reduce((sum,item)=>sum+item.blank,0)+0.002*chosen.reduce((sum,item)=>sum+item.count,0);
-              if(!best || score<best.score)best={score,chosen,width:candidateWidth};
+          let pages=[compose(flowEntries,true)];
+          if(!pages[0]) {
+            pages=[];
+            if(!flowEntries.length)throw new Error('归档提示无法放入单页，无法自动分页。');
+            // Page boundaries consume one global queue: all feeds, then Q&A.
+            // Reserving space for headings and uneven whole topics also avoids
+            // building every page at the decoder's maximum pixel budget.
+            const totalWeight=flowEntries.reduce((sum,entry)=>sum+entry.weight,0);
+            const targetWeight=MAX_CANVAS_PIXELS/(columnWidth*1.5);
+            const count=Math.min(flowEntries.length,Math.max(2,Math.ceil(totalWeight/targetWeight)));
+            const chunks=[];let offset=0,remainingWeight=totalWeight;
+            for(let page=0;page<count;page++){
+              const remainingPages=count-page,goal=remainingWeight/remainingPages,start=offset;let load=0;
+              while(offset<flowEntries.length-(remainingPages-1)){
+                const weight=flowEntries[offset].weight;
+                if(offset>start && remainingPages>1 && Math.abs(load-goal)<=Math.abs(load+weight-goal))break;
+                load+=weight;offset++;
+              }
+              chunks.push(flowEntries.slice(start,offset));remainingWeight-=load;
             }
-            if(!best)throw new Error('横向长图超过单图尺寸限制，请缩小日期范围后重试。');
-            width=best.width;canvas.style.width=width+'px';models.forEach((model,index)=>populate(model,best.chosen[index].count));
-          }else models.forEach(model=>populate(model,columns));
-          const notice=original.querySelector('[data-archive-warnings]');
-          if(notice){const copy=notice.cloneNode(true);copy.classList.add('archive-notice');canvas.append(copy);}
-          const height=Math.ceil(canvas.getBoundingClientRect().height);
-          if(height>MAX_CANVAS_WIDTH || width*height>MAX_CANVAS_PIXELS)throw new Error((horizontal?'横向长图':'上下分区拼图')+'超过单图尺寸限制，请缩小日期范围后重试。');
-          let usedArea=0,totalArea=0;
-          for(const {band} of models){const boxes=[...band.querySelectorAll('.composition-lane')].map(lane=>lane.getBoundingClientRect());const tallest=Math.max(...boxes.map(box=>box.height));usedArea+=boxes.reduce((sum,box)=>sum+box.width*box.height,0);totalArea+=boxes.reduce((sum,box)=>sum+box.width*tallest,0);}
-          return {count:1,width,layout_mode:horizontal?'horizontal':'stacked',panel_heights:measured,column_width:columnWidth,blank_ratio:totalArea?Math.max(0,1-usedArea/totalArea):0,
-            horizontal_columns:horizontal?models.reduce((sum,model)=>sum+model.row.children.length,0):undefined,
-            bands:models.map(({band})=>({kind:band.dataset.bandKind,columns:band.querySelectorAll('.composition-lane').length,
-              x:Math.round(band.getBoundingClientRect().x-canvas.getBoundingClientRect().x),y:Math.round(band.getBoundingClientRect().y-canvas.getBoundingClientRect().y),
-              width:Math.round(band.getBoundingClientRect().width),height:Math.ceil(band.getBoundingClientRect().height)}))};
+            const append=(entries,last)=>{
+              const page=compose(entries,last,true);
+              if(page){pages.push(page);return;}
+              if(entries.length<=1)throw new Error('单个主题或附件超过单页尺寸限制，无法保持完整主题自动分页。');
+              const half=entries.reduce((sum,entry)=>sum+entry.weight,0)/2;let weight=0,split=1;
+              for(let index=0;index<entries.length-1;index++){weight+=entries[index].weight;split=index+1;if(weight>=half)break;}
+              append(entries.slice(0,split),false);append(entries.slice(split),last);
+            };
+            chunks.forEach((entries,index)=>append(entries,index===chunks.length-1));
+            pages.forEach(({canvas},index)=>{canvas.querySelector('.page-number').textContent=`${String(index+1).padStart(2,'0')} / ${String(pages.length).padStart(2,'0')}`;});
+          }
+          const usedArea=pages.reduce((sum,page)=>sum+page.usedArea,0),totalArea=pages.reduce((sum,page)=>sum+page.totalArea,0);
+          const pageLayouts=pages.map((page,index)=>({page:index,width:page.width,height:page.height,
+            horizontal_columns:page.columns,bands:page.bands,topic_orders:[...page.canvas.querySelectorAll('[data-topic-order]')].map(topic=>Number(topic.dataset.topicOrder))}));
+          return {count:pages.length,width:Math.max(...pages.map(page=>page.width)),layout_mode:horizontal?'horizontal':'stacked',panel_heights:measured,column_width:columnWidth,blank_ratio:totalArea?Math.max(0,1-usedArea/totalArea):0,
+            horizontal_columns:horizontal?Math.max(...pages.map(page=>page.columns)):undefined,page_layouts:pageLayouts,
+            bands:pages.length===1?pages[0].bands:pages.flatMap((page,index)=>page.bands.map(band=>({page:index,...band})))};
         }
         const ordered= (document.body.dataset.presentation==='reading' && !board && sourcePanels.length>1);
         const candidates=ordered?[{mode:'ordered-two',width:2160,queues:[sourcePanels.flatMap((_,index)=>panelEntries(index))]}]:[{mode,width,queues:assignments.map(indices=>indices.flatMap(panelEntries))}];
@@ -463,7 +522,39 @@ async function main() {
       const readingOrder=[...document.querySelectorAll('#render-pages [data-topic-order]')].map(topic=>Number(topic.dataset.topicOrder));
       const sequential=readingOrder.every((value,index)=>!index||value>=readingOrder[index-1]);
       if(((document.body.dataset.presentation==='reading' && document.body.dataset.layout!=='board') || document.body.dataset.layout==='horizontal') && !sequential)throw new Error('阅读版主题顺序发生倒退，停止导出。');
+      let topicManifest,geometry;
+      if(['horizontal','stacked'].includes(document.body.dataset.layout)) {
+        const describe=topic=>({order:Number(topic.dataset.topicOrder),
+          evidence:[...topic.querySelectorAll('[data-evidence-id]')].map(node=>node.dataset.evidenceId),
+          text:[...topic.querySelectorAll('.message-text')].map(node=>node.textContent),
+          images:[...topic.querySelectorAll('img')].map(node=>node.src)});
+        const expectedTopics=[...document.querySelectorAll('#manuscript [data-topic-order]')]
+          .sort((left,right)=>Number(left.dataset.topicOrder)-Number(right.dataset.topicOrder)).map(describe);
+        const actualTopics=[...document.querySelectorAll('#render-pages [data-topic-order]')].map(describe);
+        if(JSON.stringify(expectedTopics)!==JSON.stringify(actualTopics))throw new Error('分页主题的正文、图片或来源顺序有遗漏或重复，停止导出。');
+        topicManifest={expected_topics:expectedTopics.length,rendered_topics:actualTopics.length,matched:true};
+        let checkedTopics=0,checkedImages=0;
+        const tolerance=1,within=(box,page)=>box.left>=page.left-tolerance && box.top>=page.top-tolerance
+          && box.right<=page.right+tolerance && box.bottom<=page.bottom+tolerance;
+        for(const canvas of document.querySelectorAll('#render-pages .render-page')) {
+          const pageBox=canvas.getBoundingClientRect();
+          for(const topic of canvas.querySelectorAll('[data-topic-order]')) {
+            checkedTopics++;
+            if(!within(topic.getBoundingClientRect(),pageBox))throw new Error('分页主题超出页面边界，停止导出以避免截断。');
+          }
+          for(const image of canvas.querySelectorAll('img')) {
+            checkedImages++;const box=image.getBoundingClientRect();
+            if(!within(box,pageBox))throw new Error('分页图片超出页面边界，停止导出以避免截断。');
+            const natural=image.naturalWidth/image.naturalHeight;
+            if(Math.abs(box.width/box.height-natural)/natural>0.01)throw new Error('分页图片宽高比例发生变化，停止导出。');
+          }
+        }
+        geometry={within_pages:true,image_aspect_preserved:true,checked_topics:checkedTopics,checked_images:checkedImages,
+          tolerance_css_pixels:tolerance};
+      }
       return {source_images:images.map(image=>({natural_width:image.naturalWidth,natural_height:image.naturalHeight,width:image.getBoundingClientRect().width,height:image.getBoundingClientRect().height})),
+        topic_manifest:topicManifest,
+        geometry,
         reading_order:{sequential,topic_fragments:readingOrder.length},
         structure:{headings:document.querySelectorAll('#render-pages .page-heading').length,footers:document.querySelectorAll('#render-pages .page-footer').length,columns:document.querySelectorAll('#render-pages .composition-lane').length},
         text_coverage:{expected_characters:[...originalText.values()].reduce((sum,text)=>sum+Array.from(text).length,0),rendered_characters:[...renderedText.values()].reduce((sum,text)=>sum+Array.from(text).length,0),mismatched_sources:mismatchedText.length},
@@ -505,7 +596,7 @@ async function main() {
       await page.locator('#raster-frame').evaluate(frame=>frame.replaceWith(frame.firstElementChild));
       images.push(filename);dimensions.push({width:width*RENDER_SCALE,height:height*RENDER_SCALE});cssDimensions.push({width,height});
     }
-    process.stdout.write(JSON.stringify({images,dimensions,render_scale:RENDER_SCALE,css_dimensions:cssDimensions,pixel_font_sizes:verification.body_font_sizes.map(size=>`${parseFloat(size)*RENDER_SCALE}px`),page_count:rendered.count,layout_mode:rendered.layout_mode,panel_heights:rendered.panel_heights,horizontal_columns:rendered.horizontal_columns,column_width:rendered.column_width,bands:rendered.bands,
+    process.stdout.write(JSON.stringify({images,dimensions,render_scale:RENDER_SCALE,css_dimensions:cssDimensions,pixel_font_sizes:verification.body_font_sizes.map(size=>`${parseFloat(size)*RENDER_SCALE}px`),page_count:rendered.count,layout_mode:rendered.layout_mode,panel_heights:rendered.panel_heights,horizontal_columns:rendered.horizontal_columns,column_width:rendered.column_width,bands:rendered.bands,page_layouts:rendered.page_layouts,
       blank_ratio:rendered.blank_ratio,lane_heights:rendered.lane_heights,layout_candidates:rendered.layout_candidates,raster_tiles:rasterTiles,...verification}));
   } finally { await browser.close(); }
 }

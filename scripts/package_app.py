@@ -50,6 +50,7 @@ OPTIONAL_SOURCE_ALLOWLIST = (
     "tests/test_readability.py", "tests/test_speech.py", "tests/test_browser_login.py",
     "tests/test_assets.py", "tests/test_editorial.py", "tests/frontend_design_check.mjs",
     "tests/png_check.mjs", "tests/render_hidpi_check.mjs", "tests/render_collage_check.mjs",
+    "tests/render_large_flow_check.mjs", "tests/test_render_diagnostics.py", "docs/LARGE_EXPORTS.md",
     "tests/ui_check.mjs", "tests/workflow_ux_check.mjs", "tests/browser_candidate_check.mjs",
     "docs/ACCEPTANCE.md", "docs/DESIGN.md", "docs/EXPORT_DENSITY.md",
     "docs/HIDPI_ACCEPTANCE.md", "docs/PHONE_ACCEPTANCE.md", "docs/SPEECH_PERFORMANCE.md",

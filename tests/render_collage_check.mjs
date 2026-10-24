@@ -130,9 +130,14 @@ assert.equal(withNotice.text_coverage.expected_characters,stacked.text_coverage.
 const oversizedInput=path.join(directory,'horizontal-oversized.html'),oversizedOutput=path.join(directory,'horizontal-oversized');
 fs.writeFileSync(oversizedInput,generated.replace(questions,questions.repeat(40)).replace('data-layout="collage"','data-layout="horizontal"'));
 const oversized=spawnSync(process.execPath,[path.join(project,'scripts','render.mjs'),oversizedInput,oversizedOutput],{encoding:'utf8',timeout:120000});
-assert.notEqual(oversized.status,0,'An unsafe panorama was exported');
-assert.match(oversized.stderr,/横向长图超过/);
-assert.ok(!fs.existsSync(path.join(oversizedOutput,'long-01.png')),'Oversized export left a partial image');
+assert.equal(oversized.status,0,oversized.stderr);
+const paginated=JSON.parse(oversized.stdout);
+assert.ok(paginated.page_count>1,'Large content was forced into one panorama');
+assert.equal(paginated.topic_manifest.matched,true);
+assert.equal(paginated.source_coverage.missing,0);
+assert.equal(paginated.text_coverage.mismatched_sources,0);
+assert.equal(paginated.topic_integrity.fragmented_topics,0);
+assert.ok(paginated.css_dimensions.every(box=>box.width<=32000 && box.height<=32000 && box.width*box.height<=80_000_000));
 
 const board=render('board',generated.replace('data-layout="collage"','data-layout="board"'));
 assert.equal(board.layout_mode,'board');
@@ -143,4 +148,4 @@ assert.ok(qa.dimensions.every(box=>box.width===1080));
 assert.equal(qa.source_coverage.expected_unique_sources,18);
 assert.equal(qa.topic_integrity.fragmented_topics,0,'Mobile pages separated a small question from its answer');
 
-console.log(JSON.stringify({directory,masonry,with_image:withImage,reading,horizontal,stacked,stacked_only_qa:onlyQa,stacked_warning:withNotice,oversized_rejected:true,board:{page_count:board.page_count,source_coverage:board.source_coverage},qa:{page_count:qa.page_count,source_coverage:qa.source_coverage}},null,2));
+console.log(JSON.stringify({directory,masonry,with_image:withImage,reading,horizontal,stacked,stacked_only_qa:onlyQa,stacked_warning:withNotice,oversized_paginated:{pages:paginated.page_count,manifest:paginated.topic_manifest},board:{page_count:board.page_count,source_coverage:board.source_coverage},qa:{page_count:qa.page_count,source_coverage:qa.source_coverage}},null,2));

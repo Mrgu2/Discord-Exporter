@@ -6,7 +6,7 @@ Linux 与 Mac 共用工作台、采集、原文归档、稿件、长图、定时
 
 不必重装或手工建隧道。使用代理时先打开随包提供的访问客户端，不以普通浏览器能先打开 HTTPS 为下载客户端的前提。客户端 Tailscale 在线后，也可打开部署时输出的固定 `https://主机.私网.ts.net` 地址；使用代理时，双击访问客户端，专用窗口直接访问私网；默认不处理 Discord 登录。客户端不运行采集或模型，关闭客户端不影响服务器任务。
 
-默认步骤见 [README Linux 部署](../README.md#linux-部署)。Ubuntu 只装一份完整项目；新电脑只需同一 Tailscale 身份和访问客户端，不重新绑定服务器已保存的账号。首次新服务器按 README 做一次日常浏览器连接；已有连接时跳过。
+默认步骤见 [README Linux 部署](LINUX_SETUP.md)。Ubuntu 只装一份完整项目；新电脑只需同一 Tailscale 身份和访问客户端，不重新绑定服务器已保存的账号。首次新服务器按 [Ubuntu 首次部署](LINUX_SETUP.md) 做一次日常浏览器连接；已有连接时跳过。
 
 Tailscale Serve 提供私网 HTTPS，代理到服务器 `127.0.0.1:8765`。服务端只信任回环来源、配置的准确域名、HTTPS 转发标记，以及指定所有者的 Tailscale 身份头；其他身份不获得管理权限。[Serve 官方说明](https://tailscale.com/docs/features/tailscale-serve)
 
@@ -18,7 +18,7 @@ Tailscale Serve 提供私网 HTTPS，代理到服务器 `127.0.0.1:8765`。服�
 
 以下安装命令都在 **Ubuntu 服务器的 SSH 终端**执行，助手和访问操作在 **你自己的 Mac / Windows**进行。需要普通用户、可用的 sudo 权限、Python 3.10+、联网下载依赖的能力，以及约数 GiB 的可用磁盘空间；实际聊天和附件会继续占用磁盘。先用 `df -h /` 检查系统盘。
 
-先从可信来源取得完整源码（或解压 `DiscordArchive-source.zip`），通过 SSH/SFTP 上传到服务器的固定目录。目录中应能看到 `app.py`、`scripts/`、`web/`、`package-lock.json`；不要只上传 Mac App，也不要上传自己的 SSH 配置或已有聊天数据。从 ZIP 首次上传与解压的完整命令见 [README Linux 部署](../README.md#linux-部署)。下面示例统一使用 `~/apps/DiscordArchive`；已有安装继续用原目录，不另建实例。
+先从可信来源取得完整源码（或解压 `DiscordArchive-source.zip`），通过 SSH/SFTP 上传到服务器的固定目录。目录中应能看到 `app.py`、`scripts/`、`web/`、`package-lock.json`；不要只上传 Mac App，也不要上传自己的 SSH 配置或已有聊天数据。从 ZIP 首次上传与解压的完整命令见 [README Linux 部署](LINUX_SETUP.md)。下面示例统一使用 `~/apps/DiscordArchive`；已有安装继续用原目录，不另建实例。
 
 ## 1. 默认部署：Tailscale HTTPS 与独立助手
 
@@ -37,13 +37,13 @@ bash scripts/install_linux.sh --with-system-deps
 bash scripts/install_linux.sh --check
 ```
 
-基础部署顺序为：基础环境 → 用户后台服务 / linger → small 语音（按需）→ Tailscale 授权 → `configure_tailscale.py` 配置所有者 → Serve 私网 HTTPS → 发布访问客户端。首次账号连接使用包内首次连接工具和日常浏览器扩展；空资料库首次连接已实测。逐条命令与成功标志见 [README](../README.md#linux-部署)。访问已有服务器的 Mac / Windows 不需要执行本项目安装器。
+基础部署顺序为：基础环境 → 用户后台服务 / linger → small 语音（按需）→ Tailscale 授权 → `configure_tailscale.py` 配置所有者 → Serve 私网 HTTPS → 发布访问客户端。首次账号连接使用包内首次连接工具和日常浏览器扩展；空资料库首次连接已实测。逐条命令与成功标志见 [README](LINUX_SETUP.md)。访问已有服务器的 Mac / Windows 不需要执行本项目安装器。
 
 助手构建、发布、代理处理和 Windows 的验证边界见 [独立助手说明](LOGIN_ASSISTANT.md)。新安装默认不自启动，由工作台设置选择；升级现有安装保留原服务偏好，切勿另建第二份资料库。
 
 ## 2. 备用：SSH 绑定与登录桌面
 
-本节仅保留旧版维护 / 回退路线，会要求 Mac 也安装完整项目；访问已有服务器优先使用第 1 节客户端；新账号优先按 README 的首次连接流程处理。旧路线同样不需要显示器、DISPLAY、Xvfb 或 VNC。先在 Mac 完整项目中登录，再经核对身份的 SSH 绑定。 绑定后，Ubuntu 自己连接 Discord、保存附件、转写和出图；关闭 Mac 或 SSH 隧道不影响服务器已提交的任务和已开启的自动计划。
+本节仅保留旧版维护 / 回退路线，会要求 Mac 也安装完整项目；访问已有服务器优先使用第 1 节客户端；新账号优先按 [Ubuntu 首次部署](LINUX_SETUP.md) 的首次连接流程处理。旧路线同样不需要显示器、DISPLAY、Xvfb 或 VNC。先在 Mac 完整项目中登录，再经核对身份的 SSH 绑定。 绑定后，Ubuntu 自己连接 Discord、保存附件、转写和出图；关闭 Mac 或 SSH 隧道不影响服务器已提交的任务和已开启的自动计划。
 
 ### 在 Ubuntu 安装后台服务
 
@@ -86,7 +86,7 @@ ssh -N -o ExitOnForwardFailure=yes -L 127.0.0.1:18765:127.0.0.1:8765 用户名@�
    ```
 
    默认读取 `~/.ssh/known_hosts`；使用独立主机记录时加 `--known-hosts /绝对路径/known_hosts`。未核对主机、远端项目不匹配、仍有采集或备用登录任务、已有另一账号时，绑定会拒绝。
-4. 看到“**绑定成功：两端账号一致**”，刷新 Ubuntu 工作台，确认进入“添加频道与答疑人”。绑定会暂停自动任务，先只配置一个小频道，完成 [首次保存、出稿和下载](../README.md#第一次使用)，再按需恢复自动任务。频道与发言人设置需要在 Ubuntu 单独配置，不会从 Mac 自动复制。
+4. 看到“**绑定成功：两端账号一致**”，刷新 Ubuntu 工作台，确认进入“添加频道与答疑人”。绑定会暂停自动任务，先只配置一个小频道，完成 [首次保存、出稿和下载](USAGE.md#第一次采集出图)，再按需恢复自动任务。频道与发言人设置需要在 Ubuntu 单独配置，不会从 Mac 自动复制。
 
 绑定传递的是本项目已有连接，经 SSH 加密 stdin 发送；不会复制日常浏览器资料，不在命令参数或输出中显示凭证。Ubuntu 会独立向 Discord 验证同一账号，保存到项目的 `data/credentials.json`（权限 `0600`）。Ubuntu 的 SSH 账号和备份应按可访问 Discord 账号连接的敏感资料保护；不要将 `.env.ssh.local`、`data/` 或浏览器资料发给别人。源码分发不包含它们。
 

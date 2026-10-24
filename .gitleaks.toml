@@ -1,0 +1,10 @@
+title = "Discord Exporter secret scanning"
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Exact public RSA key used only to stabilize the Chrome extension ID"
+condition = "AND"
+regexTarget = "secret"
+paths = ['''^login_assistant/(native_extension|extension)/manifest\.json$''']
+regexes = ['''^MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuOj63Nh\+s9kcDXfhy2oujlNcMfIQY/rVE\+Whq1LbUNvA0BtRv6p7LmVFxX5F/M/7CPJHgpg7YP55GJd1YqWzeUVc/\+QeVcD/88b2ZBTe9sqKNdlcOaOTOVqQFJ9zoaB7NoYDLToozcBx05WaIBqdlFpYTwrTzfWng4k/2\+OpdS6hvCxLvdW5g65sgB0KGwMp0kCWeaTzPDWQn1JB\+iGjxy/WzZOo08K7Q//k\+h4qVF5KOW5wJ6s2kkgGmOtnJPtGHsFgWCfdTBraPgGpq0bBq8mdRMwUHgvFOwZaRnjOKaGPQZW/Gb\+b4fqCGZQxDwbxVKKN7krCyfPW5Ns2/Ro4EQIDAQAB$''']

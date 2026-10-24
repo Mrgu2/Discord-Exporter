@@ -371,3 +371,7 @@ PATH="$PWD/.runtime/bin:$PATH" python3 scripts/package_app.py
 | 稿件范围、版式、时区、断线补采和迁移 | [详细使用与运行说明](docs/REFERENCE.md) |
 | 构建可分享的源码包 | [打包说明](docs/PACKAGING.md) |
 | 查看已验证项与未验证边界 | [安装验收](docs/INSTALLATION_ACCEPTANCE.md) · [Linux 验收与易读性走查](docs/LINUX_ACCEPTANCE.md) · [双平台入口与系统控制验收](docs/SYSTEM_CONTROLS_ACCEPTANCE.md) |
+
+## GitHub 隐私检查
+
+上传或转公开前检查当前文件和 Git 历史，具体步骤见 [GitHub 上传与隐私检查](docs/GITHUB_PRIVACY.md)。

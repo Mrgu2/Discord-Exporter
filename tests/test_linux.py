@@ -21,8 +21,8 @@ service=importlib.util.module_from_spec(spec);spec.loader.exec_module(service)
 class LinuxTests(unittest.TestCase):
     def test_access_report_does_not_advertise_public_proxy_or_loopback_ips(self):
         rows=[{'addr_info':[{'local':value} for value in
-            ['127.0.0.1','192.0.2.66','100.64.1.2','198.18.0.1','8.8.8.8','bad','::1']]}]
-        self.assertEqual(private_addresses(rows),['192.0.2.66','100.64.1.2'])
+            ['127.0.0.1','192.168.1.66','100.64.1.2','198.18.0.1','8.8.8.8','bad','::1']]}]
+        self.assertEqual(private_addresses(rows),['192.168.1.66','100.64.1.2'])
         with patch('discord_archive.access.subprocess.run',return_value=Mock(returncode=0,stdout=json.dumps(rows))), patch('discord_archive.access.shutil.which',return_value=None):
             report=linux_access()
         self.assertTrue(report['loopback_only'])

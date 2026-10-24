@@ -40,3 +40,20 @@ dist/
 /Mac-Discord-First-Login*/
 /Ubuntu-First-Login*/
 /Ubuntu-Workspace*/
+
+# Private backups, credentials and browser state
+backups/
+.ssh/
+*.bundle
+*.tar
+*.tar.*
+*.bak
+*.p8
+credentials.json
+access-code.txt
+id_rsa
+id_ed25519
+known_hosts
+Cookies
+Login Data
+Local State

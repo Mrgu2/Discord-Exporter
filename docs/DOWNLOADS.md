@@ -17,8 +17,7 @@ Mac 包解压后是 `DiscordArchive/`，双击 `Install.command`；依赖在安�
 
 不要选 GitHub 自动生成的 **Source code (zip)**，它没有构建好的 App 和内嵌客户端。
 
-<details>
-<summary>只访问已有工作台：客户端与手机入口</summary>
+## 登录助手：访问已有 Ubuntu
 
 按 [访问教程](ACCESS.md)操作，不用安装完整项目或模型。浏览器能直接访问时，无需下载客户端；代理冲突时可用专用窗口。
 
@@ -28,8 +27,6 @@ Mac 包解压后是 `DiscordArchive/`，双击 `Install.command`；依赖在安�
 | Windows x64 | [login-assistant-windows.zip](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.3/login-assistant-windows.zip)，待实机验收 |
 
 手机按 [手机访问](ACCESS.md#手机访问与-tailscale-ip)操作。上述客户端不是本机完整版；Mac App 尚未公证，仅对核对过的可信包按系统提示允许打开。
-
-</details>
 
 <details>
 <summary>高级：已有同版镜像，只下载配置包</summary>

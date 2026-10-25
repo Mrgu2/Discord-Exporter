@@ -10,8 +10,8 @@
 
 | 电脑 | 文件 | 打开入口 |
 | --- | --- | --- |
-| Apple Silicon Mac（M 系列 / arm64） | `login-assistant-mac.zip` | **Ubuntu Workspace.app** |
-| Windows x64 | `login-assistant-windows.zip` | **Ubuntu Workspace.exe** |
+| Apple Silicon Mac（M 系列 / arm64） | [下载 Mac 登录助手](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.3/login-assistant-mac.zip) | **Ubuntu Workspace.app** |
+| Windows x64 | [下载 Windows 登录助手](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.3/login-assistant-windows.zip) | **Ubuntu Workspace.exe** |
 
 文件见 [下载说明](DOWNLOADS.md)。完整解压，并安装 Chrome 或 Edge。Mac 包不适用于 Intel；Windows 包尚待实机验收，Mac App 尚未公证。
 

@@ -31,7 +31,18 @@
 
 Mac 本地直接登录；Docker 首次连接使用浏览器扩展。Windows Docker 尚未实机验收。
 
-**只想访问已经部署好的工作台？** 不用安装项目或模型，按 [电脑与手机访问教程](docs/ACCESS.md)操作。文件名、客户端架构和校验方法见 [下载说明](docs/DOWNLOADS.md)。
+### 登录助手：连接已有 Ubuntu
+
+服务器已经部署好时，访问电脑只需登录助手，不用安装完整项目或语音模型：
+
+- **M 系列 Mac（arm64）**：[下载 Mac 登录助手](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.3/login-assistant-mac.zip)。
+- **Windows x64**：[下载 Windows 登录助手](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.3/login-assistant-windows.zip)（预览，待实机验收）。
+
+解压后打开 **Ubuntu Workspace**，按 [连接与访问教程](docs/ACCESS.md)操作。浏览器能直接访问时也可不装助手；手机使用 Tailscale 与浏览器。
+
+文件校验见 [下载说明](docs/DOWNLOADS.md)。
+
+### 安装后开始使用
 
 **第一次请选消息少的频道。** 首次保存读取完整可见历史，稿件日期不限制采集量。安装并连接后，按 [首次采集出图](docs/USAGE.md#第一次采集出图)操作。
 

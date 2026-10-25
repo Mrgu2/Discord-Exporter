@@ -7,7 +7,7 @@ docker compose version >/dev/null
 if [[ ! -f .env ]]; then
   umask 077
   if [[ -f .env.example ]]; then cp .env.example .env; elif [[ -f env.example ]]; then cp env.example .env; else
-    printf 'ARCHIVE_IMAGE=discordarchive-linux:v2026.10.25.4\nARCHIVE_PORT=8765\n' > .env
+    printf 'ARCHIVE_IMAGE=discordarchive-linux:v0.1.1\nARCHIVE_PORT=8765\n' > .env
   fi
 fi
 image=$(docker compose config --images | head -n 1)

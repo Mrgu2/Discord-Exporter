@@ -7,6 +7,7 @@
 | 安装或浏览器下载失败 | 保留终端最后的错误提示，检查网络后重新双击 Install.command | 等到“安装检查通过”；重新安装不会删除已有归档 |
 | Mac 工作台没有打开 | 双击 Start.command，使用它输出的实际地址 | 默认 8765 可能已换端口；仍失败时保留终端报错 |
 | 需要重新检查环境 | 在项目目录执行 `./Install.command --check` | 根据输出处理缺失组件；检查不读取聊天或凭证 |
+| Mac 原生版误跳登录助手，或旧助手报 AppTranslocation 路径不存在 | 更新到 v0.1.1 并只重启本应用，再点“连接 Discord”；原生版不需要助手或扩展 | 不用重装依赖、删除资料或关闭系统保护；连接 Docker/远端时使用新版 `.command` 助手入口 |
 | Mac 本地登录窗口打不开 | 重新运行 Install.command 检查浏览器环境，再点“连接 Discord” | 不需要浏览器扩展；保留原连接和资料 |
 | Ubuntu 首次连接工具缺失 | 按 [首次连接](LOGIN_ASSISTANT.md#首次连接-discord)取得对应客户端 | Mac 用 arm64，Windows 用 x64；已有连接不重绑 |
 | Docker 工作台打不开 | 在部署目录执行 `sudo bash Start-Docker.sh`，再检查 Tailscale | 用 HTTPS 地址；日志：`sudo docker compose logs --tail 80` |

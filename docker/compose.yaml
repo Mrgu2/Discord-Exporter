@@ -1,7 +1,7 @@
 name: discordarchive
 services:
   app:
-    image: ${ARCHIVE_IMAGE:-discordarchive-linux:v2026.10.25.4}
+    image: ${ARCHIVE_IMAGE:-discordarchive-linux:v0.1.1}
     network_mode: host
     init: true
     restart: unless-stopped

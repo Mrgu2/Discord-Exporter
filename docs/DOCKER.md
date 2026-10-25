@@ -17,7 +17,7 @@ sudo docker compose version
 
 架构应为 `x86_64`。缺 Docker 时按 [Docker 官方 Ubuntu 安装说明](https://docs.docker.com/engine/install/ubuntu/)安装 Engine 与 Compose；保留已有容器环境。
 
-下载一个 [Docker 完整离线包](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.4/DiscordArchive-Docker-complete-preview.zip)，通过 SFTP / scp 上传到 Ubuntu。包内已含镜像和 small 模型，无需另下文件。
+下载一个 [Docker 完整离线包](https://github.com/Mrgu2/Discord-Exporter/releases/download/v0.1.1/DiscordArchive-Docker-complete-preview.zip)，通过 SFTP / scp 上传到 Ubuntu。包内已含镜像和 small 模型，无需另下文件。
 
 私有仓库需有权限的 GitHub 账号下载，无权限可能返回 404。新部署使用独立数据卷，原生安装不自动迁移或同步。
 

@@ -15,7 +15,8 @@ def verify(path,platform,require_first_login=True):
         if manifest.get('platform') not in platform:raise ValueError('助手平台不匹配')
         if require_first_login:
             required={'Browser Extension/manifest.json','Browser Extension/popup.mjs','Browser Extension/launch.mjs','Browser Extension/session.mjs'}
-            required.add('Connect Discord.cmd' if manifest['platform']=='win32-x64' else '首次连接 Discord.app/Contents/MacOS/applet')
+            entries={'Connect Discord.cmd'} if manifest['platform']=='win32-x64' else {'首次连接 Discord.command','首次连接 Discord.app/Contents/MacOS/applet'}
+            if not entries.intersection(names):raise ValueError('此包缺少首次连接入口')
             if manifest.get('first_login_included') is not True or manifest.get('connection_protocol')!=2 or not required.issubset(names):raise ValueError('此包只有访问功能，缺少首次连接工具；请重新构建 --with-first-login')
         if set(names)!=set(manifest['files'])|{'ASSISTANT-MANIFEST.json'}:raise ValueError('助手清单不匹配')
         for name,digest in manifest['files'].items():

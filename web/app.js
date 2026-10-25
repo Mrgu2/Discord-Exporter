@@ -429,7 +429,7 @@
     const busy = Boolean(currentJob || state.running || state.capture_running || runningRun || pendingAction || state.queue_length);
     const discordCredential = first(credentials.discord, credentials.has_discord, state.has_discord_token, config.discord_token_configured);
     const linuxBinding=data.platform?.system==='linux';
-    const localHelper=Boolean(data.connection_helper?.available);
+    const localHelper=linuxBinding && Boolean(data.connection_helper?.available);
     const helperBinding=Boolean(data.remote?.https_url)||localHelper;
     $('linux-binding').hidden=!(linuxBinding||localHelper) || !isLocal;
     $('helper-downloads').hidden=!helperBinding;
@@ -561,7 +561,7 @@
   }
   async function connectBrowser({fallback=false}={}) {
     if (!isLocal) return;
-    if ((snapshot?.platform?.system==='linux'||snapshot?.connection_helper?.available) && !fallback) {
+    if (snapshot?.platform?.system==='linux' && !fallback) {
       $('advanced-settings').open=true;
       $('linux-binding').scrollIntoView({block:'center'});
       if(snapshot?.remote?.https_url||snapshot?.connection_helper?.available)$('helper-downloads').querySelector('a').focus();

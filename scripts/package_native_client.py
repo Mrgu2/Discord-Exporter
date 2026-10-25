@@ -1,8 +1,21 @@
 #!/usr/bin/env python3
 """Small native client: Go standard library, no Node/Python/Whisper on the client."""
-import argparse,base64,hashlib,json,os,plistlib,re,shutil,subprocess,zipfile
+import argparse,base64,hashlib,json,os,plistlib,re,shlex,shutil,subprocess,zipfile
 from pathlib import Path
 ROOT=Path(__file__).resolve().parent.parent
+
+def write_mac_command(tree,name,argument,message=''):
+    text="""#!/bin/bash
+set -euo pipefail
+cd "$(/usr/bin/dirname "$0")"
+if [ ! -x "./Ubuntu Workspace.app/Contents/MacOS/client" ]; then
+  printf '%s\\n' '连接包不完整：请完整解压，并把本入口与 Ubuntu Workspace.app 保持在同一目录。' >&2
+  exit 1
+fi
+"""
+    text+='"./Ubuntu Workspace.app/Contents/MacOS/client"'+(' '+argument if argument else '')+'\n'
+    if message:text+="printf '%s\\n' "+shlex.quote(message)+'\n'
+    target=tree/name;target.write_text(text);target.chmod(0o755)
 
 def build(platform,destination,first_login=False):
     destination=Path(destination).resolve()
@@ -22,32 +35,17 @@ def build(platform,destination,first_login=False):
         binary.chmod(0o755);subprocess.run(['codesign','--force','--sign','-',str(app)],check=True,capture_output=True);subprocess.run(['codesign','--verify','--strict',str(app)],check=True,capture_output=True)
     if first_login:shutil.copytree(ROOT/'login_assistant/native_extension',tree/'Browser Extension')
     if system=='darwin':
-        settings=tree/'设置工作台.app'
-        script='''on run
-set folderPath to do shell script "/usr/bin/dirname " & quoted form of (POSIX path of (path to me))
-do shell script (quoted form of (folderPath & "/Ubuntu Workspace.app/Contents/MacOS/client")) & " --configure"
-end run'''
-        source_path=destination/'settings.applescript';source_path.write_text(script)
-        subprocess.run(['osacompile','-o',str(settings),str(source_path)],check=True,capture_output=True)
-        subprocess.run(['codesign','--force','--sign','-',str(settings)],check=True,capture_output=True)
-        if first_login:
-            setup=tree/'首次连接 Discord.app'
-            setup_source=destination/'connect.applescript'
-            setup_source.write_text('''on run
-set folderPath to do shell script "/usr/bin/dirname " & quoted form of (POSIX path of (path to me))
-do shell script (quoted form of (folderPath & "/Ubuntu Workspace.app/Contents/MacOS/client")) & " --install-only"
-display dialog "本机组件已就绪。请在 Chrome / Edge 加载同目录的 Browser Extension（只需一次）；回到日常 Discord 标签页，点扩展图标，识别并确认账号。" buttons {"好"} default button "好" with title "首次连接 Discord"
-end run''')
-            subprocess.run(['osacompile','-o',str(setup),str(setup_source)],check=True,capture_output=True)
-            subprocess.run(['codesign','--force','--sign','-',str(setup)],check=True,capture_output=True)
+        write_mac_command(tree,'打开工作台.command','')
+        write_mac_command(tree,'设置工作台.command','--configure')
+        if first_login:write_mac_command(tree,'首次连接 Discord.command','--install-only','本机组件已就绪。请在 Chrome / Edge 加载同目录 Browser Extension，再在日常 Discord 标签页识别并确认账号。')
     else:
         (tree/'设置工作台.cmd').write_bytes(b'@echo off\r\n"%~dp0Ubuntu Workspace.exe" --configure\r\n')
         if first_login:
             (tree/'Connect Discord.cmd').write_bytes(b'@echo off\r\nstart "" /wait "%~dp0Ubuntu Workspace.exe" --install-only\r\necho Load Browser Extension once, then click its icon on your signed-in Discord tab.\r\npause\r\n')
     go_root=Path(subprocess.check_output(['go','env','GOROOT'],text=True).strip());license=next(p for p in [go_root/'LICENSE',go_root.parent/'LICENSE'] if p.is_file());shutil.copy2(license,tree/'GO-LICENSE.txt')
-    instructions='Ubuntu 工作台轻客户端\n日常访问已有 Ubuntu：登录同一个 Tailscale 账号，双击 Ubuntu Workspace。无需重新绑定 Discord、扩展、网页配对或 SSH 隧道。\n自动发现同私网中名称以 discordarchive 开头的工作台；找不到才输入一次 HTTPS 地址。设置工具可修改日常访问地址。\n不需要完整项目、Python、Node、Playwright 或语音模型；日常启动不注册浏览器组件。\n'
+    instructions='Ubuntu 工作台轻客户端\n日常访问已有 Ubuntu：登录同一个 Tailscale 账号，Mac 双击“打开工作台.command”，Windows 双击 Ubuntu Workspace.exe。无需重新绑定 Discord、扩展、网页配对或 SSH 隧道。\n自动发现同私网中名称以 discordarchive 开头的工作台；找不到才输入一次 HTTPS 地址。设置工具可修改日常访问地址。\n不需要完整项目、Python、Node、Playwright 或语音模型；日常启动不注册浏览器组件。\n'
     if first_login:
-        instructions+='首次连接本机 Docker：先打开本机工作台，下载带本机地址的连接包；不需要 Tailscale。跨电脑连接使用 Tailscale HTTPS。\n首次连接：Mac 双击“首次连接 Discord.app”，Windows 双击 Connect Discord.cmd；仅安装当前用户的本机连接组件。Chrome/Edge 的扩展管理页开启开发者模式，加载本目录 Browser Extension（一次）。在日常浏览器正常登录 Discord，回到 Discord 标签页点扩展图标，点击识别，核对服务器和账号后确认。连接完成后 Ubuntu 可独立运行；以后换电脑无需重复。\n当前扩展未上架，首次手动加载仍需本人操作。验证码由本人在日常浏览器处理，本工具不绕过人机验证。\n'
+        instructions+='首次连接本机 Docker：先打开本机工作台，下载带本机地址的连接包；不需要 Tailscale。跨电脑连接使用 Tailscale HTTPS。\n首次连接：Mac 双击“首次连接 Discord.command”，Windows 双击 Connect Discord.cmd；仅安装当前用户的本机连接组件。Chrome/Edge 的扩展管理页开启开发者模式，加载本目录 Browser Extension（一次）。在日常浏览器正常登录 Discord，回到 Discord 标签页点扩展图标，点击识别，核对服务器和账号后确认。连接完成后 Ubuntu 可独立运行；以后换电脑无需重复。\n当前扩展未上架，首次手动加载仍需本人操作。验证码由本人在日常浏览器处理，本工具不绕过人机验证。\n'
     instructions+='Windows x64 与 Intel Mac 尚待实机验证；Mac 本地签名，尚无 Developer ID 公证。账号连接迁移不是 Discord 官方 OAuth。\n'
     (tree/'README.txt').write_text(instructions)
 

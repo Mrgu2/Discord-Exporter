@@ -2,7 +2,7 @@
 import hashlib,http.client,importlib.util,json,os,re,shutil,subprocess,tarfile,time,urllib.request,urllib.error,zipfile
 from urllib.parse import quote,urlsplit
 from pathlib import Path
-ROOT=Path.cwd();TAG=os.environ['RELEASE_TAG'];assert re.fullmatch(r'v\d{4}\.\d{2}\.\d{2}\.\d+',TAG)
+ROOT=Path.cwd();TAG=os.environ['RELEASE_TAG'];assert re.fullmatch(r'v\d+\.\d+\.\d+(?:\.\d+)?',TAG)
 REPO=os.environ['GITHUB_REPOSITORY'];SHA=os.environ['GITHUB_SHA'];OUT=ROOT/'dist/releases'/TAG;OUT.mkdir(parents=True)
 WORK=ROOT/'dist/release-job';WORK.mkdir()
 

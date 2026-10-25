@@ -10,14 +10,14 @@
 
 | 电脑 | 文件 | 打开入口 |
 | --- | --- | --- |
-| Apple Silicon Mac（M 系列 / arm64） | [下载 Mac 登录助手](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.4/login-assistant-mac.zip) | **Ubuntu Workspace.app** |
-| Windows x64 | [下载 Windows 登录助手](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.4/login-assistant-windows.zip) | **Ubuntu Workspace.exe** |
+| Apple Silicon Mac（M 系列 / arm64） | [下载 Mac 登录助手](https://github.com/Mrgu2/Discord-Exporter/releases/download/v0.1.1/login-assistant-mac.zip) | **打开工作台.command** |
+| Windows x64 | [下载 Windows 登录助手](https://github.com/Mrgu2/Discord-Exporter/releases/download/v0.1.1/login-assistant-windows.zip) | **Ubuntu Workspace.exe** |
 
 文件见 [下载说明](DOWNLOADS.md)。完整解压，并安装 Chrome 或 Edge。Mac 包不适用于 Intel；Windows 包尚待实机验收，Mac App 尚未公证。
 
 客户端使用专用窗口直连私网，不改全局代理。服务器专用包已填地址；否则尝试发现本人名下唯一的 `discordarchive` 工作台，找不到时输入一次 HTTPS 地址。
 
-修改地址：Mac 打开 **设置工作台.app**，Windows 打开 **设置工作台.cmd**。这些入口应与主 App 保持同目录。客户端只保存地址，不保存 Discord 凭据；关闭窗口不影响服务器任务。TUN 或企业强制代理需另行诊断。
+修改地址：Mac 打开 **设置工作台.command**，Windows 打开 **设置工作台.cmd**。这些入口应与主 App 保持同目录。客户端只保存地址，不保存 Discord 凭据；关闭窗口不影响服务器任务。TUN 或企业强制代理需另行诊断。
 
 服务器服务已停止时，按 [启动方法](OPERATIONS.md#以后如何打开)恢复；首次账号连接见 [首次连接 Discord](LOGIN_ASSISTANT.md#首次连接-discord)。
 

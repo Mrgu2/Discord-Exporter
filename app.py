@@ -163,7 +163,7 @@ class Application:
             'runs': runs, 'drafts': page['items'], 'draft_count': page['total'],
             'draft_revision': page['revision'], 'archive': archive,
             'credentials': credential_flags,
-            'connection_helper': {'available': bool(local and supports_local_connection() and any((self.root/'.local/login-assistants'/name).is_file() for name in ('login-assistant-mac.zip','login-assistant-windows.zip'))),
+            'connection_helper': {'available': bool(local and sys.platform.startswith('linux') and supports_local_connection() and any((self.root/'.local/login-assistants'/name).is_file() for name in ('login-assistant-mac.zip','login-assistant-windows.zip'))),
                 'local_binding': bool(local and supports_local_connection())},
             'remote': {'listener_warning': getattr(self, 'listener_warning', None), 'listen_port': getattr(self, 'port', 8765), 'requested_port': getattr(getattr(self, 'startup', None), 'port', 8765), 'urls': self.remote_addresses(),'administrator':local,
                 'https_url':getattr(getattr(self,'remote_access',None),'origin',''),

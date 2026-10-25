@@ -1,13 +1,13 @@
 # 获取安装包
 
-当前版本：**v2026.10.25.4（预览版）**。[打开 Release](https://github.com/Mrgu2/Discord-Exporter/releases/tag/v2026.10.25.4)，在 **Assets** 中下载。私有仓库需有权限的 GitHub 账号；无权限可能返回 404。
+当前版本：**v0.1.1**。[打开 Release](https://github.com/Mrgu2/Discord-Exporter/releases/tag/v0.1.1)，在 **Assets** 中下载。私有仓库需有权限的 GitHub 账号；无权限可能返回 404。
 
 ## 首次安装：只选一个包
 
 | 安装在哪台电脑 | 下载文件 | 教程 |
 | --- | --- | --- |
-| Mac | [DiscordArchive-source.zip](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.4/DiscordArchive-source.zip) | [Mac 安装](MAC.md) |
-| Ubuntu / Windows x64 | [DiscordArchive-Docker-complete-preview.zip](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.4/DiscordArchive-Docker-complete-preview.zip) | [Ubuntu](DOCKER.md) · [Windows（预览）](WINDOWS_DOCKER.md) |
+| Mac | [DiscordArchive-source.zip](https://github.com/Mrgu2/Discord-Exporter/releases/download/v0.1.1/DiscordArchive-source.zip) | [Mac 安装](MAC.md) |
+| Ubuntu / Windows x64 | [DiscordArchive-Docker-complete-preview.zip](https://github.com/Mrgu2/Discord-Exporter/releases/download/v0.1.1/DiscordArchive-Docker-complete-preview.zip) | [Ubuntu](DOCKER.md) · [Windows（预览）](WINDOWS_DOCKER.md) |
 
 **Ubuntu 和 Windows 用同一个 Docker 完整包**，已含镜像、运行环境和 small 模型。解压后按自己的系统教程安装，不用再下载其他包。宿主机仍需安装 Docker；首次连接和私网访问需要网络。Windows Docker 尚未实机验收。
 
@@ -23,8 +23,8 @@ Mac 包解压后是 `DiscordArchive/`，双击 `Install.command`；依赖在安�
 
 | 访问电脑 | 可选客户端 |
 | --- | --- |
-| M 系列 Mac（arm64） | [login-assistant-mac.zip](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.4/login-assistant-mac.zip)，不适用于 Intel Mac |
-| Windows x64 | [login-assistant-windows.zip](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.4/login-assistant-windows.zip)，待实机验收 |
+| M 系列 Mac（arm64） | [login-assistant-mac.zip](https://github.com/Mrgu2/Discord-Exporter/releases/download/v0.1.1/login-assistant-mac.zip)，不适用于 Intel Mac |
+| Windows x64 | [login-assistant-windows.zip](https://github.com/Mrgu2/Discord-Exporter/releases/download/v0.1.1/login-assistant-windows.zip)，待实机验收 |
 
 手机按 [手机访问](ACCESS.md#手机访问与-tailscale-ip)操作。上述客户端不是本机完整版；Mac App 尚未公证，仅对核对过的可信包按系统提示允许打开。
 
@@ -35,10 +35,10 @@ Mac 包解压后是 `DiscordArchive/`，双击 `Install.command`；依赖在安�
 
 | 系统 | 配置包 |
 | --- | --- |
-| Ubuntu | [DiscordArchive-Docker-linux-amd64.zip](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.4/DiscordArchive-Docker-linux-amd64.zip) |
-| Windows x64（预览） | [DiscordArchive-Docker-desktop-preview.zip](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.4/DiscordArchive-Docker-desktop-preview.zip) |
+| Ubuntu | [DiscordArchive-Docker-linux-amd64.zip](https://github.com/Mrgu2/Discord-Exporter/releases/download/v0.1.1/DiscordArchive-Docker-linux-amd64.zip) |
+| Windows x64（预览） | [DiscordArchive-Docker-desktop-preview.zip](https://github.com/Mrgu2/Discord-Exporter/releases/download/v0.1.1/DiscordArchive-Docker-desktop-preview.zip) |
 
-解压配置包，将[同版镜像 discordarchive-linux-amd64.tar.gz](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.4/discordarchive-linux-amd64.tar.gz)放在 `Install-Docker.sh` / `Install-Docker.cmd` 旁。镜像不要手动解压。已有完整 ZIP 时，无需这些文件。
+解压配置包，将[同版镜像 discordarchive-linux-amd64.tar.gz](https://github.com/Mrgu2/Discord-Exporter/releases/download/v0.1.1/discordarchive-linux-amd64.tar.gz)放在 `Install-Docker.sh` / `Install-Docker.cmd` 旁。镜像不要手动解压。已有完整 ZIP 时，无需这些文件。
 
 Ubuntu 原生安装是替代方案，使用 Mac 同名的源码包，见 [原生教程](LINUX_SETUP.md)。
 
@@ -46,7 +46,7 @@ Ubuntu 原生安装是替代方案，使用 Mac 同名的源码包，见 [原生
 
 ## 核对文件
 
-下载 [CHECKSUMS.sha256](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.4/CHECKSUMS.sha256)，对照所选文件的 SHA-256：
+下载 [CHECKSUMS.sha256](https://github.com/Mrgu2/Discord-Exporter/releases/download/v0.1.1/CHECKSUMS.sha256)，对照所选文件的 SHA-256：
 
 ```sh
 # Mac；文件名换成自己下载的文件

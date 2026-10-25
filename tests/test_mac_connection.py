@@ -14,3 +14,16 @@ class MacConnectionBoundaryTests(unittest.TestCase):
                 with patch('app.sys.platform','darwin'),patch('app.bind_connection',return_value={'ok':True}) as bind:h.mutation()
                 self.assertEqual(h.send.call_args.args[0],expected)
                 self.assertEqual(bind.call_count,1 if expected==200 else 0)
+
+    def test_native_mac_status_does_not_route_to_installed_helper(self):
+        import threading
+        from app import Application
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);helpers=root/'.local/login-assistants';helpers.mkdir(parents=True);(helpers/'login-assistant-mac.zip').write_bytes(b'fixture')
+            a=Application.__new__(Application);a.root=root;a._status_cache={};a._status_cache_lock=threading.RLock()
+            a.service=Mock();a.service.status.return_value={};a.worker=Mock();a.worker.status.return_value=({},{});a.worker.media.stats.return_value={}
+            a.store=Mock();a.store.list_runs.return_value=[];a.store.summary.return_value={};a.drafts=Mock();a.drafts.list_draft_page.return_value={'items':[],'total':0,'revision':'fixture'}
+            a.credentials=Mock();a.credentials.get.return_value=None;a.settings=Mock();a.settings.read.return_value={};a.remote_addresses=Mock(return_value=[]);a.csrf='fixture';a.code='fixture'
+            with patch('app.sys.platform','darwin'):
+                status=a.status(local=True)
+            self.assertFalse(status['connection_helper']['available'])

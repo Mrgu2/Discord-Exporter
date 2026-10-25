@@ -16,7 +16,7 @@
 
 ## 2. 文件放到哪里
 
-只下载一个 [Docker 完整离线包](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.4/DiscordArchive-Docker-complete-preview.zip)，已含镜像和 small 模型，无需另下文件。
+只下载一个 [Docker 完整离线包](https://github.com/Mrgu2/Discord-Exporter/releases/download/v0.1.1/DiscordArchive-Docker-complete-preview.zip)，已含镜像和 small 模型，无需另下文件。
 
 按 [校验方法](DOWNLOADS.md#核对文件)核对 SHA-256。若 Windows 标记 ZIP 来自互联网，在 ZIP“属性”中解除锁定，再完整解压到固定目录，例如 `D:\DiscordArchive`。不要全局关闭脚本策略，也不要解压包内的 `.tar.gz` 镜像。
 

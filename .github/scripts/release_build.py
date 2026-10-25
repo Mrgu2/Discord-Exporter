@@ -1,5 +1,6 @@
 """Stage a new private draft; never publishes, changes old releases or uses user data."""
-import hashlib,importlib.util,json,os,re,shutil,subprocess,tarfile,time,urllib.request,urllib.error,zipfile
+import hashlib,http.client,importlib.util,json,os,re,shutil,subprocess,tarfile,time,urllib.request,urllib.error,zipfile
+from urllib.parse import quote,urlsplit
 from pathlib import Path
 ROOT=Path.cwd();TAG=os.environ['RELEASE_TAG'];assert re.fullmatch(r'v\d{4}\.\d{2}\.\d{2}\.\d+',TAG)
 REPO=os.environ['GITHUB_REPOSITORY'];SHA=os.environ['GITHUB_SHA'];OUT=ROOT/'dist/releases'/TAG;OUT.mkdir(parents=True)
@@ -14,8 +15,31 @@ def sha(path):
 def load(path,name):
  spec=importlib.util.spec_from_file_location(name,path);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);return m
 
-draft=json.loads(subprocess.check_output(['gh','release','view',TAG,'--repo',REPO,'--json','isDraft,targetCommitish'],text=True));assert draft['isDraft'] and draft['targetCommitish']==SHA
-run('gh','release','download',TAG,'--repo',REPO,'--pattern','build-input.tar.gz','--dir',str(WORK))
+def api(path):return json.loads(subprocess.check_output(['gh','api',path],text=True))
+draft=next(r for r in api(f'repos/{REPO}/releases?per_page=100') if r['tag_name']==TAG)
+assert draft['draft'] and draft['target_commitish']==SHA
+rid=draft['id'];auth={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'User-Agent':'DiscordArchive-release'}
+class SafeRedirect(urllib.request.HTTPRedirectHandler):
+ def redirect_request(self,req,fp,code,msg,headers,url):
+  result=super().redirect_request(req,fp,code,msg,headers,url)
+  if urlsplit(url).hostname!='api.github.com':result.remove_header('Authorization')
+  return result
+def download_draft(name,target):
+ asset=next(a for a in api(f'repos/{REPO}/releases/{rid}/assets?per_page=100') if a['name']==name)
+ request=urllib.request.Request(f'https://api.github.com/repos/{REPO}/releases/assets/{asset["id"]}',headers={**auth,'Accept':'application/octet-stream'})
+ with urllib.request.build_opener(SafeRedirect()).open(request,timeout=120) as response,Path(target).open('xb') as f:shutil.copyfileobj(response,f)
+ assert sha(target)==asset['digest'].removeprefix('sha256:')
+def upload_draft(path):
+ assert api(f'repos/{REPO}/releases/{rid}')['draft']
+ for asset in api(f'repos/{REPO}/releases/{rid}/assets?per_page=100'):
+  if asset['name']==path.name:subprocess.run(['gh','api','--method','DELETE',f'repos/{REPO}/releases/assets/{asset["id"]}'],check=True)
+ connection=http.client.HTTPSConnection('uploads.github.com',timeout=180,blocksize=1024*1024)
+ with path.open('rb') as f:
+  connection.request('POST',f'/repos/{REPO}/releases/{rid}/assets?name='+quote(path.name),body=f,headers={**auth,'Content-Type':'application/octet-stream','Content-Length':str(path.stat().st_size)})
+  response=connection.getresponse();body=response.read();assert response.status==201,(path.name,response.status)
+  asset=json.loads(body);assert asset['digest']=='sha256:'+sha(path)
+ connection.close()
+download_draft('build-input.tar.gz',WORK/'build-input.tar.gz')
 assert sha(WORK/'build-input.tar.gz')==os.environ['INPUT_SHA256']
 with tarfile.open(WORK/'build-input.tar.gz') as t:t.extractall(WORK/'input',filter='data')
 INPUT=WORK/'input';meta=json.loads((INPUT/'BUILD.json').read_text());assert meta['commit']==SHA
@@ -92,7 +116,7 @@ with (OUT/'discordarchive-linux-amd64.tar.gz').open('wb') as f:
 pack=load(ROOT/'scripts/package_docker_release.py','docker_release')
 for edition in ['linux','desktop','complete']:pack.package(OUT,edition,INPUT/'html')
 for p in (INPUT/'metadata').iterdir():shutil.copy2(p,OUT/p.name)
-for n in ['DiscordArchive-source.zip','login-assistant-mac.zip','login-assistant-windows.zip']:run('gh','release','download',TAG,'--repo',REPO,'--pattern',n,'--dir',str(OUT))
+for n in ['DiscordArchive-source.zip','login-assistant-mac.zip','login-assistant-windows.zip']:download_draft(n,OUT/n)
 for name in ['DiscordArchive-source.zip','DiscordArchive-Docker-linux-amd64.zip','DiscordArchive-Docker-desktop-preview.zip','DiscordArchive-Docker-complete-preview.zip']:
  with zipfile.ZipFile(OUT/name) as z:
   assert z.testzip() is None
@@ -101,5 +125,5 @@ for name in ['DiscordArchive-source.zip','DiscordArchive-Docker-linux-amd64.zip'
 (OUT/'IMAGE-ACCEPTANCE.json').write_text(json.dumps(report,indent=2))
 (OUT/'CHECKSUMS.sha256').write_text(''.join(sha(p)+'  '+p.name+'\n' for p in sorted(OUT.iterdir()) if p.is_file() and p.name!='CHECKSUMS.sha256'))
 for p in OUT.iterdir():
- if p.name not in ['DiscordArchive-source.zip','login-assistant-mac.zip','login-assistant-windows.zip']:run('gh','release','upload',TAG,str(p),'--repo',REPO,'--clobber')
+ if p.name not in ['DiscordArchive-source.zip','login-assistant-mac.zip','login-assistant-windows.zip']:upload_draft(p)
 print(json.dumps(report))

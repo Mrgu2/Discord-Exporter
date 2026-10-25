@@ -29,7 +29,7 @@ python3 scripts/desktop_launcher.py --root "$PWD" --check
 
 ## Ubuntu Docker 首次部署（推荐）
 
-按 [Docker 教程](DOCKER.md)检查 Linux amd64、Docker / Compose 与空间。部署 ZIP 和离线镜像放同一新目录，执行 `sudo bash Install-Docker.sh`，再执行 `sudo bash Configure-Tailscale.sh`。保留已有 Serve 路由；模型已在镜像内。
+按 [Docker 教程](DOCKER.md)检查 Linux amd64、Docker / Compose 与空间。下载一个完整离线 ZIP，解压到新目录，执行 `sudo bash Install-Docker.sh`，再执行 `sudo bash Configure-Tailscale.sh`。保留已有 Serve 路由；模型已在镜像内。
 
 隔离验收要设置不同 `COMPOSE_PROJECT_NAME` 和 `ARCHIVE_PORT`，不得挂载原 data/output 卷。复用凭证必须得到用户授权，私密数据仅传入新卷。检查实际出图、语音进入稿件、容器重启后资料仍在，以及停止/自动启动设置生效。不得挂载 Docker socket 或电源接口；Docker 版只能控制容器内应用，不控制 Ubuntu 关机/重启。
 

@@ -1,8 +1,8 @@
 # Discord 归档与答疑
 
-保存有权访问的 Discord 频道，按指定答疑人整理文字稿和长图。支持 Mac 本地运行、Ubuntu Docker 部署。
+保存有权访问的 Discord 频道，按指定答疑人整理文字稿和长图。Mac 原生运行；Ubuntu 和 Windows x64 使用 Docker（Windows 为预览版）。
 
-[下载发布包](https://github.com/Mrgu2/Discord-Exporter/releases/tag/v2026.10.25.3) · [Mac 安装](docs/MAC.md) · [Ubuntu Docker 安装](docs/DOCKER.md)
+[下载发布包](https://github.com/Mrgu2/Discord-Exporter/releases/tag/v2026.10.25.3) · [Mac 安装](docs/MAC.md) · [Ubuntu 安装](docs/DOCKER.md) · [Windows 安装](docs/WINDOWS_DOCKER.md)
 
 ## 主要功能
 
@@ -16,25 +16,24 @@
 资料保存在运行应用的机器上，Mac 与 Ubuntu 不自动同步。推送默认关闭，启用后图片发给指定收件人。使用时遵守 Discord 平台规则。
 
 <details>
-<summary>安装与使用教程（Mac / Ubuntu / 手机）</summary>
+<summary>安装与使用教程（Mac / Ubuntu / Windows）</summary>
 
 ## 选择使用方式
 
 <a id="需要拿哪些文件"></a>
 
-| 使用场景 | 下载文件 | 教程 |
-| --- | --- | --- |
-| Mac 本地运行 | [DiscordArchive-source.zip](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.3/DiscordArchive-source.zip) | [安装与登录](docs/MAC.md) |
-| Ubuntu Docker（x86_64） | [部署 ZIP](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.3/DiscordArchive-Docker-linux-amd64.zip) + [离线镜像，含 small](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.3/discordarchive-linux-amd64.tar.gz) | [安装与首次连接](docs/DOCKER.md) |
-| Mac 访问已有 Ubuntu | [login-assistant-mac.zip](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.3/login-assistant-mac.zip)（仅 M 系列 / arm64） | [日常访问](docs/ACCESS.md) |
-| Windows 访问已有 Ubuntu | [login-assistant-windows.zip](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.3/login-assistant-windows.zip)（x64，待实机验收） | [日常访问](docs/ACCESS.md) |
-| 手机访问已有工作台 | 安装 Tailscale，无需项目或模型 | [手机访问](docs/ACCESS.md#手机访问与-tailscale-ip) |
+**只下载与你的安装方式对应的一个 ZIP。** Docker 完整包已含镜像和 small 语音模型，无需另下镜像。
 
-Mac 本地直接登录；Ubuntu 首次连接使用浏览器扩展，换电脑访问不重复绑定。客户端架构与文件校验见 [选包说明](docs/DOWNLOADS.md)。
+| 安装在哪台电脑 | 下载一个文件 | 教程 |
+| --- | --- | --- |
+| Mac 本地运行 | [Mac 安装包](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.3/DiscordArchive-source.zip) | [安装与登录](docs/MAC.md) |
+| Ubuntu / Windows x64 | [Docker 完整离线包（约 1.31 GB）](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.3/DiscordArchive-Docker-complete-preview.zip) | [Ubuntu](docs/DOCKER.md) · [Windows（预览）](docs/WINDOWS_DOCKER.md) |
+
+Mac 本地直接登录；Docker 首次连接使用浏览器扩展。Windows Docker 尚未实机验收。
+
+**只想访问已经部署好的工作台？** 不用安装项目或模型，按 [电脑与手机访问教程](docs/ACCESS.md)操作。文件名、客户端架构和校验方法见 [下载说明](docs/DOWNLOADS.md)。
 
 **第一次请选消息少的频道。** 首次保存读取完整可见历史，稿件日期不限制采集量。安装并连接后，按 [首次采集出图](docs/USAGE.md#第一次采集出图)操作。
-
-Windows 本机 Docker 的配置预览见 [Windows 教程](docs/WINDOWS_DOCKER.md)；可从本版 Release 下载[完整离线包](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.3/DiscordArchive-Docker-complete-preview.zip)，尚未完成 Windows 实机验收。
 
 按需配置：[目录、端口与 Docker 变量](docs/DOCKER_CONFIG.md) · [语音](docs/USAGE.md#语音转写可选) · [自动推送](docs/DELIVERY.md) · [自启动与日常管理](docs/OPERATIONS.md) · [Agent 安装](docs/AGENT_INSTALL.md)。
 

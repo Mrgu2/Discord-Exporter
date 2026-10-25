@@ -14,14 +14,11 @@
 
 ## 2. 文件放到哪里
 
-从 [v2026.10.25.3 Release](https://github.com/Mrgu2/Discord-Exporter/releases/tag/v2026.10.25.3) 下载[完整离线包](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.3/DiscordArchive-Docker-complete-preview.zip)。若拿到 `DiscordArchive-Docker-complete-preview.zip`，镜像已在其中，解压后直接继续。仅拿配置 ZIP 时需配套两份文件：
+只下载一个 [Docker 完整离线包](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.3/DiscordArchive-Docker-complete-preview.zip)（约 1.31 GB），已含镜像和 small 模型，无需另下文件。
 
-1. `DiscordArchive-Docker-desktop-preview.zip`：同版 Release 中的预览配置包。
-2. `discordarchive-linux-amd64.tar.gz`：使用同版 Release 中的 v2026.10.25.3 镜像，包含浏览器、FFmpeg 和 small 模型。不要与 Release 上的旧镜像混用。
+按 [校验方法](DOWNLOADS.md#核对文件)核对 SHA-256。若 Windows 标记 ZIP 来自互联网，在 ZIP“属性”中解除锁定，再完整解压到固定目录，例如 `D:\DiscordArchive`。不要全局关闭脚本策略，也不要解压包内的 `.tar.gz` 镜像。
 
-核对 SHA-256 后，若 Windows 标记 ZIP 来自互联网，可在 ZIP“属性”中解除锁定，再解压。不要全局关闭脚本策略。
-
-将配置包完整解压，例如放到 `D:\DiscordArchive`；镜像原文件也放在这个目录，不要再解压镜像：
+解压后应看到：
 
 ```text
 D:\DiscordArchive\

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Make the flat Linux installer ZIP; the offline image remains a separate asset."""
+"""Build Docker installers; the complete edition includes the offline image."""
 import argparse,hashlib,importlib.util,json,zipfile
 from pathlib import Path
 ROOT=Path(__file__).resolve().parent.parent
@@ -28,7 +28,7 @@ def package(destination, edition="linux", html_directory=None):
  for source in m.source_files(ROOT):
   relative=str(source.relative_to(ROOT))
   if relative=='README.md' or relative.startswith('docs/'):entries[relative]=source.read_bytes()
- entries['README-Docker.md']='# Discord Archive Docker\n\n将已校验的离线镜像放到本目录。Linux 按 [Ubuntu Docker 教程](docs/DOCKER.md)；Windows 按 [Docker Desktop 预览教程](docs/WINDOWS_DOCKER.md)。目录、端口和变量见 [配置指南](docs/DOCKER_CONFIG.md)。\n\nMac 保留原生安装。容器只管理本应用，不控制 Ubuntu 关机或重启。已有资料保存在独立命名卷中，不要运行 down -v。\n'.encode()
+ entries['README-Docker.md']=('# Discord Archive Docker\n\n'+('完整包已含镜像和 small 模型，无需另下文件。' if edition=='complete' else '这是拆分配置包，需将同版离线镜像放到本目录。')+'\n\nLinux 按 [Ubuntu Docker 教程](docs/DOCKER.md)；Windows 按 [Docker Desktop 预览教程](docs/WINDOWS_DOCKER.md)。目录、端口和变量见 [配置指南](docs/DOCKER_CONFIG.md)。\n\nMac 保留原生安装。容器只管理本应用，不控制 Ubuntu 关机或重启。已有资料保存在独立命名卷中，不要运行 down -v。\n').encode()
  if html_directory is not None:
   html_directory=Path(html_directory).resolve()
   for source in m.source_files(ROOT):
@@ -36,7 +36,7 @@ def package(destination, edition="linux", html_directory=None):
    if relative.suffix=='.md':
     rendered=relative.with_suffix('.html');candidate=html_directory/rendered
     if candidate.is_file() and not candidate.is_symlink():entries[str(rendered)]=candidate.read_bytes()
- entries['START-HERE.html']=('''<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Docker 配置预览包</title><style>body{font:16px/1.7 system-ui;max-width:850px;margin:40px auto;padding:0 20px;color:#25324a}a{color:#355bdc}li{margin:12px 0}</style><h1>Docker 配置预览包</h1><p>程序镜像 v2026.10.25.3。Windows Docker Desktop 入口尚待 Windows 实机验收；Mac 保留原生安装。</p><ol><li>完整解压到固定目录。镜像已在完整包内；若只有配置 ZIP，另放入同版离线镜像。</li><li>Windows 按<a href="docs/WINDOWS_DOCKER.html">Windows 教程</a>准备 Docker Desktop，再双击 Install-Docker.cmd。</li><li>Linux 按<a href="docs/DOCKER.html">Ubuntu 教程</a>，在本目录运行 sudo bash Install-Docker.sh。</li></ol><p><a href="docs/DOCKER_CONFIG.html">目录、端口、变量与备份</a> · <a href="docs/LOGIN_ASSISTANT.html">首次连接</a> · <a href="docs/USAGE.html">首次出图</a> · <a href="docs/DOCKER_CONFIG_ACCEPTANCE.html">验收边界</a></p><p>不修改原生安装数据。Docker 只管理容器内应用，不控制主机关机或重启。先在新资料库使用小频道验收，不做全量采集。</p></html>''' if html_directory is not None else '请打开 docs/WINDOWS_DOCKER.md 或 docs/DOCKER.md；Windows Docker Desktop 尚待实机验收。').encode()
+ entries['START-HERE.html']=('''<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Docker 安装</title><style>body{font:16px/1.7 system-ui;max-width:850px;margin:40px auto;padding:0 20px;color:#25324a}a{color:#355bdc}li{margin:12px 0}</style><h1>Docker 安装</h1><p>PACKAGE_INTRO</p><p>程序镜像 v2026.10.25.3。Windows Docker Desktop 入口尚待 Windows 实机验收；Mac 保留原生安装。</p><ol><li>完整解压到固定目录，然后只看自己系统的教程。</li><li>Windows 按<a href="docs/WINDOWS_DOCKER.html">Windows 教程</a>准备 Docker Desktop，再双击 Install-Docker.cmd。</li><li>Linux 按<a href="docs/DOCKER.html">Ubuntu 教程</a>，在本目录运行 sudo bash Install-Docker.sh。</li></ol><p><a href="docs/DOCKER_CONFIG.html">目录、端口、变量与备份</a> · <a href="docs/LOGIN_ASSISTANT.html">首次连接</a> · <a href="docs/USAGE.html">首次出图</a> · <a href="docs/DOCKER_CONFIG_ACCEPTANCE.html">验收边界</a></p><p>不修改原生安装数据。Docker 只管理容器内应用，不控制主机关机或重启。先在新资料库使用小频道验收，不做全量采集。</p></html>'''.replace('PACKAGE_INTRO', '已含镜像和 small 模型，无需另下文件。' if edition=='complete' else '这是拆分配置包，需另放入同版离线镜像。首次安装推荐完整包，见 <a href="docs/DOWNLOADS.html">下载说明</a>。') if html_directory is not None else '请打开 docs/WINDOWS_DOCKER.md 或 docs/DOCKER.md；Windows Docker Desktop 尚待实机验收。').encode()
  entries['CHECKSUMS.sha256']=(image_hash+'  '+image.name+'\n').encode()
  entries['.env.example']=(ROOT/'docker/env.example').read_bytes()
  with zipfile.ZipFile(out,'w',compression=zipfile.ZIP_DEFLATED) as bundle:

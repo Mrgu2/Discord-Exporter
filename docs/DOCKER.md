@@ -2,8 +2,6 @@
 
 适用于 Ubuntu x86_64（amd64）。镜像包含运行环境、浏览器、FFmpeg、中文字体和 small 模型，使用与 Mac 相同的工作台。Mac 继续[原生安装](MAC.md)。
 
-已下载本版[完整离线 ZIP](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.3/DiscordArchive-Docker-complete-preview.zip)时，镜像已在其中，直接从第 2 节安装；不必重复下载独立镜像。Windows 入口尚待实机验收。
-
 ## 1. 准备服务器与文件
 
 服务器需 Docker Engine、Compose v2、Tailscale，建议至少留 12 GiB 空间。检查：
@@ -17,27 +15,25 @@ sudo docker compose version
 
 架构应为 `x86_64`。缺 Docker 时按 [Docker 官方 Ubuntu 安装说明](https://docs.docker.com/engine/install/ubuntu/)安装 Engine 与 Compose；保留已有容器环境。
 
-从 [Release](https://github.com/Mrgu2/Discord-Exporter/releases/tag/v2026.10.25.3)下载**两个文件**，通过 SFTP / scp 上传到 Ubuntu 的同一个新目录，例如 `~/apps/discordarchive-docker`：
-
-| 文件 | 用途 |
-| --- | --- |
-| `DiscordArchive-Docker-linux-amd64.zip` | 部署脚本、教程与镜像校验文件 |
-| `discordarchive-linux-amd64.tar.gz` | 离线镜像，已含 small 模型，无需手动解压 |
+下载一个 [Docker 完整离线包](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.3/DiscordArchive-Docker-complete-preview.zip)（约 1.31 GB），通过 SFTP / scp 上传到 Ubuntu。包内已含镜像和 small 模型，无需另下文件。
 
 私有仓库需有权限的 GitHub 账号下载，无权限可能返回 404。新部署使用独立数据卷，原生安装不自动迁移或同步。
 
 ## 2. 安装并启动
 
-以下在 **Ubuntu SSH 终端**进入解压后的部署目录执行。若能看到 `Install-Docker.sh` 和 `compose.yaml`，不用再解压：
+在 **Ubuntu SSH 终端**执行。假设 ZIP 已上传到 `~/apps/`，将它解压到一个尚不存在的新目录：
 
 ```sh
-cd ~/apps/discordarchive-docker
+mkdir -p ~/apps
+cd ~/apps
+unzip DiscordArchive-Docker-complete-preview.zip -d discordarchive-docker
+cd discordarchive-docker
 sudo bash Install-Docker.sh
 ```
 
-尚未解压时，将完整预览包解压到一个新目录；标准配置 ZIP 解压后还需将同版镜像放到该目录。需要先查看配置时，用 [Linux 可复制示例](DOCKER_CONFIG.md#linux)，其命令也会安装。
+如果已经解压、能看到 `Install-Docker.sh` 和 `compose.yaml`，直接进入该目录执行最后一条命令，不要再次解压。目录已有旧安装时，先按 [更新与数据保留](DELIVERY.md#已有安装如何更新)操作。
 
-缺 `unzip` 时先执行 `sudo apt-get update && sudo apt-get install -y unzip`。安装器导入镜像、实际加载 small CPU INT8 模型并启动应用，看到“**应用已就绪**”后继续。
+缺 `unzip` 时先执行 `sudo apt-get update && sudo apt-get install -y unzip`。安装器导入镜像、加载 small CPU INT8 模型并启动应用，看到“**应用已就绪**”后继续。默认配置无需修改；要先看配置，可用 [Linux 可复制示例](DOCKER_CONFIG.md#linux)，该示例也会安装。
 
 默认请求 8765 端口，被占用时自动换端口。应用只监听服务器本机，另一台电脑不能直接打开提示中的 `127.0.0.1` 地址，需完成下一节。
 

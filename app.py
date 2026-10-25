@@ -36,6 +36,10 @@ from discord_archive.phone_sessions import PhoneSessions
 from discord_archive.remote_access import RemoteAccess, LoginPairings, DeviceAuthorizations
 
 
+def supports_local_connection():
+    return sys.platform == 'darwin' or (sys.platform.startswith('linux') and os.environ.get('DISCORD_ARCHIVE_DOCKER') == '1')
+
+
 def choose_export_directory():
     if sys.platform != 'darwin':
         raise ValueError('文件夹选择仅支持 Mac，请填写本机绝对路径')
@@ -150,7 +154,7 @@ class Application:
         credential_flags = self._cached_status_value(('credentials', credential_revision), 30,
             lambda: {kind: bool(self.credentials.get(kind)) for kind in ('discord', 'model', 'delivery_email', 'delivery_telegram', 'delivery_discord', 'delivery_clawbot')})
         return {
-            'platform': {'system': sys.platform, 'login_desktop': bool(os.environ.get('DISCORD_ARCHIVE_LOGIN_DESKTOP')) if local else False},
+            'platform': {'system': sys.platform, 'container': os.environ.get('DISCORD_ARCHIVE_DOCKER') == '1', 'login_desktop': bool(os.environ.get('DISCORD_ARCHIVE_LOGIN_DESKTOP')) if local else False},
             'system': self._cached_status_value('system_controls',30,
                 lambda:{'hostname':self.local_hostname,'binding_root':str(self.root.resolve()),'project_id':project_id(self.root),
                     'startup':self.startup.status(),'power':self.service.power.status()})
@@ -159,7 +163,8 @@ class Application:
             'runs': runs, 'drafts': page['items'], 'draft_count': page['total'],
             'draft_revision': page['revision'], 'archive': archive,
             'credentials': credential_flags,
-            'connection_helper': {'available': bool(local and sys.platform=='darwin' and (self.root/'.local/login-assistants/login-assistant-mac.zip').is_file())},
+            'connection_helper': {'available': bool(local and supports_local_connection() and any((self.root/'.local/login-assistants'/name).is_file() for name in ('login-assistant-mac.zip','login-assistant-windows.zip'))),
+                'local_binding': bool(local and supports_local_connection())},
             'remote': {'listener_warning': getattr(self, 'listener_warning', None), 'listen_port': getattr(self, 'port', 8765), 'requested_port': getattr(getattr(self, 'startup', None), 'port', 8765), 'urls': self.remote_addresses(),'administrator':local,
                 'https_url':getattr(getattr(self,'remote_access',None),'origin',''),
                 **({'access':self._cached_status_value('linux_access',30,
@@ -288,7 +293,7 @@ def make_handler(application):
                     for member in original.infolist():
                         if member.filename!='server.json':archive.writestr(member,original.read(member.filename))
                     target={'server_url':app.remote_access.origin}
-                    if self.local() and sys.platform=='darwin':
+                    if self.local() and supports_local_connection():
                         target={'server_url':f'http://127.0.0.1:{app.port}','project_id':project_id(app.root)}
                     archive.writestr('server.json',json.dumps(target))
                 return self.send(200,output.getvalue(),'application/zip',{'Content-Disposition':'attachment; filename="'+source.name+'"'})
@@ -391,7 +396,7 @@ def make_handler(application):
                 if path == '/api/bind-discord' and self.command == 'POST':
                     if not self.administrator():
                         return self.send(403,{'error':'绑定连接仅允许本机或 SSH 隧道操作'})
-                    if sys.platform=='darwin' and data.get('expected_project_id')!=project_id(app.root):
+                    if (sys.platform=='darwin' or (self.local() and supports_local_connection())) and data.get('expected_project_id')!=project_id(app.root):
                         raise ValueError('本机资料库已变化，请从当前工作台重新下载首次连接包')
                     result=bind_connection(app.credentials,app.worker,data.get('credential'),data.get('expected_user_id'))
                     app.invalidate_status_cache()

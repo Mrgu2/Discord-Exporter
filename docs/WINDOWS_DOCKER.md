@@ -1,6 +1,6 @@
 # Windows Docker 本地完整版（预览）
 
-流程：**安装与私网访问 → [连接 Discord](LOGIN_ASSISTANT.md#首次连接-discord) → [首次出图](USAGE.md#第一次采集出图)**。
+流程：**安装并打开本机工作台 → [连接 Discord](LOGIN_ASSISTANT.md#首次连接-discord) → [首次出图](USAGE.md#第一次采集出图)**。
 
 在 Windows 上运行同一个 Linux 镜像，采集、small 语音转写和出图均在本机容器完成。它与“Windows 访问 Ubuntu 客户端”是两种用途。
 
@@ -54,23 +54,34 @@ Set-Location D:\DiscordArchive
 
 **通过标志：**输出应用地址，且打开的工作台属于本资料库。若提示无法访问回环地址或身份检查失败，先按下方排错；不要改为监听 `0.0.0.0` 来跳过检查。
 
-安装只启动工作台。首次账号连接还需完成下一节 Tailscale HTTPS；无需另一台 Ubuntu。
+安装完成后直接在同一台 Windows 绑定账号，按下一节操作；不需要 Tailscale 或另一台电脑。
 
 端口被 Windows 其他程序占用时，启动器会选择后续空闲端口，更新 `.env` 并保留旧配置副本；显式 shell 环境变量不会被覆盖。
 
-## 4. Tailscale HTTPS（首次连接与远程访问）
+<a id="windows-first-connection"></a>
 
-在 Windows 和访问设备安装 [Tailscale](https://tailscale.com/docs/install)，登录自己的账号。重新打开终端，使 `tailscale.exe` 可用，再运行：
+## 4. 在同一台 Windows 连接 Discord
+
+1. 保持 Docker Desktop 与容器运行。双击 **Start-Docker.cmd** 打开本机工作台，地址以启动提示为准，例如 `http://127.0.0.1:8765`。
+2. 在该工作台点击 **首次连接 Discord**，下载 **Windows 连接工具与访问客户端**。使用这里下载的包，它已带上本机地址和当前资料库标识；不要手动改成另一台机器的地址。
+3. 解压后运行 **Connect Discord.cmd**，再按 [首次连接教程](LOGIN_ASSISTANT.md#首次连接-discord)加载扩展、识别并确认日常浏览器里的 Discord 账号。
+4. 工作台显示正确账号后，点击 **[首次采集出图](USAGE.md#第一次采集出图)**，先测试一个小频道。
+
+同机绑定无需 Tailscale、HTTPS 域名或 SSH 隧道。连接成功后，助手可关闭、扩展可移除，容器独立运行；连接过期时再绑定。浏览器或容器网络无法访问 Discord 时，仍需分别处理网络问题。
+
+<a id="4-tailscale-https首次连接与远程访问"></a>
+
+## 远程访问（可选）
+
+只有要从其他电脑或手机访问时，才在 Windows 和访问设备安装 [Tailscale](https://tailscale.com/docs/install)，登录获准账号。重新打开部署目录的 PowerShell，执行：
 
 ```powershell
 .\Configure-Tailscale.ps1
 ```
 
-按 Tailscale 提示批准 HTTPS；命令需要管理员权限时，只在管理员 PowerShell 重跑这一步。脚本输出固定 HTTPS 地址；已有 Serve 路由会保留并打印待核对命令。成功后用该地址打开工作台，再完成账号连接。
+按提示批准 HTTPS；需要管理员权限时，只在管理员 PowerShell 重跑这一步。脚本输出固定 HTTPS 地址，已有 Serve 路由保留并打印待核对命令。其他设备按 [访问教程](ACCESS.md)打开工作台，已连接账号不重复绑定。
 
-在 HTTPS 工作台下载 Windows 首次连接工具，按 [首次连接教程](LOGIN_ASSISTANT.md#首次连接-discord)用日常浏览器确认账号与目标。完成后按 [首次采集出图](USAGE.md#第一次采集出图)测试一个小频道；首次保存读取完整历史。
-
-Tailscale 在 Windows 运行，容器不管理 Windows 网络或电源。日常浏览器代理有冲突时，用 [访问客户端](ACCESS.md)的专用窗口。不开放公网或启用 Funnel。
+Tailscale 在 Windows 宿主机运行。不开放公网或启用 Funnel，容器不管理 Windows 网络或电源。
 
 <details>
 <summary>安装后的管理、配置与排错</summary>
@@ -114,6 +125,6 @@ Windows 的 host 网络、NTFS 挂载、扫码扩展和 Tailscale Serve 仍需�
 
 ## 下一步
 
-确认 HTTPS 工作台能打开后，点击 **[下一步：连接 Discord](LOGIN_ASSISTANT.md#首次连接-discord)**，在自己的 Mac 或 Windows 访问电脑操作。
+确认本机工作台能打开后，点击 **[下一步：连接 Discord](LOGIN_ASSISTANT.md#首次连接-discord)**，在运行 Docker 的这台 Windows 操作。
 
 工作台已经显示已连接账号时，直接进入 **[首次采集出图](USAGE.md#第一次采集出图)**，不用重新绑定。

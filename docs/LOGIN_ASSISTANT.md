@@ -1,15 +1,15 @@
 # 首次连接与访问客户端
 
-流程：**打开 HTTPS 工作台 → 确认 Discord 账号 → [首次出图](USAGE.md#第一次采集出图)**。
+流程：**打开目标工作台 → 确认 Discord 账号 → [首次出图](USAGE.md#第一次采集出图)**。
 
 Mac 本地使用 [登录窗口](MAC.md#登录-discord)。本页用于 Docker 或原生 Ubuntu 的首次连接；服务器已连接时，直接按 [日常访问](ACCESS.md)操作。
 
 ## 首次连接 Discord
 
-在访问电脑操作，只做一次。需要 Chrome 或 Edge、Tailscale，以及能正常登录 Discord 的日常浏览器。
+在访问电脑操作，只做一次。需要 Chrome 或 Edge，以及能正常登录 Discord 的日常浏览器。同机 Docker 使用本机工作台地址；只有跨电脑访问才需要 Tailscale HTTPS。
 
-1. 完整解压对应 [访问客户端](DOWNLOADS.md)。用 **Ubuntu Workspace.app / Ubuntu Workspace.exe** 打开工作台；没有预填地址时，输入部署时得到的 HTTPS 地址。系统代理有冲突时使用此专用窗口。
-2. 可从工作台下载带服务器地址的首次连接包。Mac 打开包内 **首次连接 Discord.app**，Windows 打开 **Connect Discord.cmd**，安装当前用户的连接组件。
+1. 打开要连接的工作台。同机 Windows Docker 双击 **Start-Docker.cmd**，直接使用启动器打开的 `http://127.0.0.1:实际端口`；跨电脑打开部署时得到的 Tailscale HTTPS 地址。不要同时开多个待绑定资料库。
+2. 在当前工作台下载对应系统的首次连接包，完整解压。Mac 打开 **首次连接 Discord.app**，Windows 打开 **Connect Discord.cmd**，安装当前用户的连接组件。该包已附带目标地址；同机包还包含资料库标识，不用手填地址。
 3. 在 Chrome 打开 `chrome://extensions/`（Edge 用 `edge://extensions/`），开启 **开发者模式 → 加载已解压的扩展**，选择包内 **Browser Extension**。扩展未上架，此步需手动完成；更新同目录扩展时点刷新。
 4. 在日常浏览器本人登录 [Discord](https://discord.com/channels/@me)，停在 Discord 标签页，点扩展图标，再点 **识别当前 Discord 账号**。标签页刷新并识别后，核对账号和服务器，点 **确认连接此账号**。
 5. 看到 **连接成功**，且目标工作台显示账号后，按 [首次采集出图](USAGE.md#第一次采集出图)验证一个小频道。自动任务保持暂停，按需恢复。
@@ -21,7 +21,7 @@ Mac 本地使用 [登录窗口](MAC.md#登录-discord)。本页用于 Docker 或
 <details>
 <summary>连接权限与保存位置</summary>
 
-扩展 v0.4 仅在主动识别后，短时观察所选 Discord 标签页的指定同站 GET 请求；不读取网页存储、聊天正文或其他网站。识别后停止观察，待本人确认后经 Native Messaging 和 Tailscale HTTPS 提交。
+扩展 v0.4 仅在主动识别后，短时观察所选 Discord 标签页的指定同站 GET 请求；不读取网页存储、聊天正文或其他网站。识别后停止观察，待本人确认后经 Native Messaging 提交到本机回环地址或 Tailscale HTTPS。回环绑定必须匹配下载包中的资料库标识；不接受局域网 HTTP。
 
 扩展不持久保存连接，取消或超时即清空。服务器再次验证账号，凭据文件权限为 `0600`；Mac 本地登录使用系统钥匙串。扩展不关闭代理、不跳过证书检查。
 

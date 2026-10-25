@@ -1,0 +1,38 @@
+name: Local Docker connection
+on:
+  push:
+    branches: [codex/windows-local-binding]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  connector:
+    strategy:
+      matrix:
+        os: [windows-2022, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache: false
+      - name: Native connector tests on the actual runner OS
+        run: go test -v login_assistant/native_client.go login_assistant/native_client_test.go
+  container-protocol:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache: false
+      - name: Build native host for real loopback test
+        run: go build -o "$RUNNER_TEMP/connector" login_assistant/native_client.go
+      - name: Start isolated backend in a Linux container
+        run: docker run --detach --name local-binding-fixture --network host --read-only --cap-drop ALL --tmpfs /tmp -v "$PWD:/src:ro" python:3.11-slim python /src/tests/local_docker_binding_probe.py serve 29876
+      - name: Verify package personalization, native bind, persistence and stale-library rejection
+        run: python3 tests/local_docker_binding_probe.py probe "$RUNNER_TEMP/connector" 29876
+      - name: Stop fixture container
+        if: always()
+        run: docker stop local-binding-fixture

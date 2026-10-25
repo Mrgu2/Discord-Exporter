@@ -184,3 +184,42 @@ func TestBindingSetupDoesNotReplaceDailyWorkspace(t *testing.T) {
 		t.Fatal("binding target not retained")
 	}
 }
+
+func TestLocalDockerIdentityBoundBeforeCredentialSubmission(t *testing.T) {
+	project := strings.Repeat("a", 64)
+	for _, tc := range []struct {
+		name                         string
+		container, capability, admin bool
+		project                      string
+		accepted                     bool
+	}{
+		{"docker", true, true, true, project, true},
+		{"different library", true, true, true, strings.Repeat("b", 64), false},
+		{"missing library", true, true, true, "", false},
+		{"native linux", false, true, true, project, false},
+		{"missing capability", true, false, true, project, false},
+		{"not administrator", true, true, false, project, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			posted := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/api/status" {
+					json.NewEncoder(w).Encode(map[string]any{"archive_key": "fixture", "platform": map[string]any{"system": "linux", "container": tc.container}, "connection_helper": map[string]any{"local_binding": tc.capability}, "system": map[string]any{"project_id": project}, "remote": map[string]any{"administrator": tc.admin}})
+					return
+				}
+				posted++
+				var body map[string]string
+				json.NewDecoder(r.Body).Decode(&body)
+				if body["expected_project_id"] != project || r.Header.Get("X-Archive-Key") != "fixture" {
+					t.Error("missing project pin or CSRF")
+				}
+				json.NewEncoder(w).Encode(map[string]any{"ok": true})
+			}))
+			defer server.Close()
+			_, err := handle(Config{ServerURL: server.URL, ProjectID: tc.project}, Message{Action: "bind", Credential: "synthetic_never_real", UserID: "9001"})
+			if (err == nil) != tc.accepted || (posted == 1) != tc.accepted {
+				t.Fatalf("acceptance=%v posted=%d err=%v", tc.accepted, posted, err)
+			}
+		})
+	}
+}

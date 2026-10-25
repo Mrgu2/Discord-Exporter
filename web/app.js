@@ -493,7 +493,7 @@
     $('connect-browser-button').querySelector('span').textContent = !isLocal ? '请在 Mac 上连接' : connectingBrowser ? '正在连接…' : discordCredential ? '重新连接 Discord' : '连接 Discord';
     if ((linuxBinding||localHelper) && isLocal && !connectingBrowser) {
       $('connect-browser-button').querySelector('span').textContent=discordCredential ? (helperBinding ? '账号说明' : '重新绑定账号') : helperBinding ? '首次连接 Discord' : '本机登录后绑定';
-      if(helperBinding)text('connection-detail',discordCredential?(localHelper?'此 Mac 已保存连接，可独立采集。':'Ubuntu 已保存连接，可独立采集；换电脑直接访问，无需重新绑定。'):'先下载客户端并运行首次连接工具，再在日常 Discord 页面识别并确认账号。');
+      if(helperBinding)text('connection-detail',discordCredential?(localHelper?'本机已保存连接，可独立采集。':'Ubuntu 已保存连接，可独立采集；换电脑直接访问，无需重新绑定。'):'先下载客户端并运行首次连接工具，再在日常 Discord 页面识别并确认账号。');
       if (discordCredential===false && !helperBinding) text('connection-detail','在 Mac 本机登录后，经 SSH 绑定此服务器。绑定后可独立运行，VNC 仅作备用。');
     }
     const offlineSince = first(connectivity.offline_since, state.offline_since);

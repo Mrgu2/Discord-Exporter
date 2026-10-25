@@ -269,7 +269,7 @@ func request(c Config, path, method string, payload any, key string) (map[string
 	r, e := client().Do(req)
 	if e != nil {
 		if strings.HasPrefix(c.ServerURL, "http://127.0.0.1:") {
-			return nil, errors.New("无法连接Mac本机工作台，请先打开完整项目的Start.command")
+			return nil, errors.New("无法连接本机工作台，请先启动应用或运行 Start-Docker.cmd")
 		}
 		return nil, errors.New("无法直连私网 HTTPS；请确认两端 Tailscale 在线")
 	}
@@ -300,8 +300,10 @@ func status(c Config) (map[string]any, error) {
 	if strings.HasPrefix(c.ServerURL, "http://127.0.0.1:") {
 		system, _ := s["system"].(map[string]any)
 		platform, _ := s["platform"].(map[string]any)
-		if !ok || remote["administrator"] != true || platform["system"] != "darwin" || !regexp.MustCompile("^[a-f0-9]{64}$").MatchString(c.ProjectID) || system["project_id"] != c.ProjectID {
-			return nil, errors.New("本机工作台身份不匹配，请从当前Mac工作台重新下载首次连接包")
+		helper, _ := s["connection_helper"].(map[string]any)
+		localPlatform := platform["system"] == "darwin" || (platform["system"] == "linux" && platform["container"] == true && helper["local_binding"] == true)
+		if !ok || remote["administrator"] != true || !localPlatform || !regexp.MustCompile("^[a-f0-9]{64}$").MatchString(c.ProjectID) || system["project_id"] != c.ProjectID {
+			return nil, errors.New("本机工作台身份不匹配，请从当前工作台重新下载首次连接包")
 		}
 		return s, nil
 	}

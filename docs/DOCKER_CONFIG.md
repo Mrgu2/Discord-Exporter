@@ -257,9 +257,9 @@ sudo docker compose cp app:/app/output/. /备份目录/output
 
 ## 下一步
 
-安装器显示“应用已就绪”后，继续配置私网访问：
+安装器显示“应用已就绪”后，按部署位置继续：
 
 - **[Ubuntu 下一步：Tailscale HTTPS](DOCKER.md#3-设置私网访问只做一次)**。
-- **[Windows 下一步：Tailscale HTTPS](WINDOWS_DOCKER.md#4-tailscale-https首次连接与远程访问)**。
+- **[Windows 下一步：在本机连接 Discord](WINDOWS_DOCKER.md#windows-first-connection)**，不需要 Tailscale。
 
 已通过 HTTPS 打开工作台时，直接 [连接 Discord](LOGIN_ASSISTANT.md#首次连接-discord)；已连接账号时，进入 [首次出图](USAGE.md#第一次采集出图)。

@@ -249,7 +249,9 @@ sudo docker compose cp app:/app/output/. /备份目录/output
 
 恢复先在**新项目名的空卷**演练，不覆盖正在使用的资料库：初始化同版容器 → 停止应用 → 将 data/output 备份复制进对应卷 → 核对容器 UID 1000 可读写 → 启动并检查消息、稿件和连接。不要合并两个账号的凭据文件。恢复工具与跨 Windows/Linux 的权限差异尚未实机验收，遇到权限问题先保留备份再求助。
 
-更新先备份，核对新镜像与部署文件配套，在原目录保留 `.env` 和项目名后运行安装入口。保持同一卷，禁止 `docker compose down -v` 或清空旧 data。仅导入新镜像不会替换正在运行的容器。
+更新先停止容器并备份。在原部署目录更新脚本和镜像，保留自己的 `.env`、覆盖文件和 `COMPOSE_PROJECT_NAME`。在 `.env` 中把 `ARCHIVE_IMAGE` 改为目标版本，本版为 `discordarchive-linux:v2026.10.25.4`，不要用示例覆盖其他设置。然后运行对应系统的安装入口，核对工作台仍是原资料库。
+
+保持原数据卷，禁止 `docker compose down -v` 或清空旧 data。只导入新镜像、只更新客户端，或保留旧 `ARCHIVE_IMAGE`，都不会切换应用版本。
 
 本次配置预览包使用 v2026.10.25.4 镜像，包含容器停止竞态修复；Linux、Windows 预览入口与测试边界见 [配置包验收](DOCKER_CONFIG_ACCEPTANCE.md)。
 

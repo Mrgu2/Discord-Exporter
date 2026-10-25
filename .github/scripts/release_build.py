@@ -91,9 +91,11 @@ try:
  except urllib.error.HTTPError as e:assert e.code==400
  run('docker','exec',name,'python','scripts/doctor.py')
  run('docker','exec','-e','DISCORD_ARCHIVE_DOCKER=','-e','DISCORD_ARCHIVE_CREDENTIAL_STORE=',name,'python','-m','unittest','discover','-s','tests','-q')
- run('sudo','apt-get','update','-qq');run('sudo','apt-get','install','-y','-qq','espeak-ng')
+ install=subprocess.run(['sudo','apt-get','install','-y','-qq','--no-install-recommends','espeak-ng'])
+ if install.returncode:
+  run('sudo','apt-get','update','-qq');run('sudo','apt-get','install','-y','-qq','--no-install-recommends','espeak-ng')
  audio=WORK/'public-fixture.wav';run('espeak-ng','-s','145','-w',str(audio),'This is a small offline speech transcription test. The account connection is ready.')
- run('docker','cp',str(audio),name+':/tmp/public-fixture.wav')
+ run('docker','exec','-i',name,'python','-c',"from pathlib import Path;import sys;Path('/tmp/public-fixture.wav').write_bytes(sys.stdin.buffer.read())",input=audio.read_bytes())
  speech="from faster_whisper import WhisperModel;import json;m=WhisperModel('/app/.runtime/models/faster-whisper-small',device='cpu',compute_type='int8',cpu_threads=2,local_files_only=True);s,_=m.transcribe('/tmp/public-fixture.wav',language='en',beam_size=1);text=' '.join(x.text for x in s).strip();assert text;print(json.dumps({'synthetic_speech_transcribed':True,'text':text}))"
  speech_result=json.loads(subprocess.check_output(['docker','exec',name,'/opt/whisper/bin/python','-c',speech],text=True))
  # Actual manuscript rendering on public fixture text; no Discord content.

@@ -23,8 +23,8 @@
 
 ## 同机 Docker 首次连接修正
 
-修复分支支持同机 Windows 从本机工作台下载带实际端口与资料库标识的连接包，无需 Tailscale HTTPS。连接器提交前校验目标，服务端也独立拒绝错误资料库标识；跨电脑仍使用 Tailscale。
+v2026.10.25.4 支持同机 Windows 从本机工作台下载带实际端口与资料库标识的连接包，无需 Tailscale HTTPS。连接器提交前校验目标，服务端也独立拒绝错误资料库标识；跨电脑仍使用 Tailscale。
 
 [GitHub Actions 验证](https://github.com/Mrgu2/Discord-Exporter/actions/runs/40203012273)：Windows Server 2022 和 Ubuntu 的原生连接器测试、真实 Linux 容器中的回环 HTTP 绑定均通过。容器测试使用虚构账号，覆盖保存连接、暂停自动任务和错误资料库拒绝提交。本机 362 项 Python 回归、Mac 助手构建签名及 390/1360 连接界面检查通过。
 
-这不等于 Windows Docker Desktop/WSL 与真实浏览器账号的完整实机验收。修复尚未进入上方旧版 Release，不能用旧包验证新流程。
+这不等于 Windows Docker Desktop/WSL 与真实浏览器账号的完整实机验收。同机流程使用 v2026.10.25.4 或更新版本；上方旧版 Release 不含此修复。

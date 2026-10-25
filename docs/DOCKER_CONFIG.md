@@ -25,7 +25,7 @@ if (-not (Test-Path -LiteralPath 'compose.yaml')) {
 
 ```dotenv
 COMPOSE_PROJECT_NAME=discordarchive
-ARCHIVE_IMAGE=discordarchive-linux:v2026.10.25.3
+ARCHIVE_IMAGE=discordarchive-linux:v2026.10.25.4
 ARCHIVE_PORT=8765
 ARCHIVE_HTTPS_PORT=443
 COMPOSE_FILE=compose.yaml
@@ -53,7 +53,7 @@ fi
 
 ```dotenv
 COMPOSE_PROJECT_NAME=discordarchive
-ARCHIVE_IMAGE=discordarchive-linux:v2026.10.25.3
+ARCHIVE_IMAGE=discordarchive-linux:v2026.10.25.4
 ARCHIVE_PORT=8765
 ARCHIVE_HTTPS_PORT=443
 COMPOSE_FILE=compose.yaml
@@ -251,7 +251,7 @@ sudo docker compose cp app:/app/output/. /备份目录/output
 
 更新先备份，核对新镜像与部署文件配套，在原目录保留 `.env` 和项目名后运行安装入口。保持同一卷，禁止 `docker compose down -v` 或清空旧 data。仅导入新镜像不会替换正在运行的容器。
 
-本次配置预览包使用 v2026.10.25.3 镜像，包含容器停止竞态修复；Linux、Windows 预览入口与测试边界见 [配置包验收](DOCKER_CONFIG_ACCEPTANCE.md)。
+本次配置预览包使用 v2026.10.25.4 镜像，包含容器停止竞态修复；Linux、Windows 预览入口与测试边界见 [配置包验收](DOCKER_CONFIG_ACCEPTANCE.md)。
 
 </details>
 

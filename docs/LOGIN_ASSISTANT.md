@@ -6,7 +6,7 @@ Mac 本地使用 [登录窗口](MAC.md#登录-discord)。本页用于 Docker 或
 
 ## 首次连接 Discord
 
-同机 Docker 直连适用于 main 新版；当前 Release 尚未包含此修复，旧包仍使用 Tailscale HTTPS。
+同机 Docker 直连需要 v2026.10.25.4 或更新版本；旧包仍使用 Tailscale HTTPS。
 
 在访问电脑操作，只做一次。需要 Chrome 或 Edge，以及能正常登录 Discord 的日常浏览器。同机 Docker 使用本机工作台地址；只有跨电脑访问才需要 Tailscale HTTPS。
 

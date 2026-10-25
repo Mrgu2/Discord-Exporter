@@ -20,3 +20,11 @@
 ## 分平台配置示例复核
 
 基础配置已分为 Windows / Linux 两份，可直接复制；图片另存片段也按平台分开。两平台默认与另存共四种 Compose 配置解析通过，Windows 分隔符在 Linux 上模拟。Linux 教程命令已在新项目和空卷执行，small 加载及重复执行不覆盖配置通过；测试仅将项目名改为隔离名称。Windows 复制步骤在 PowerShell 容器中用假安装器验证，覆盖空格目录、已有配置保护与错误目录，仍不代表 Windows Desktop 实测。高级选项默认折叠。
+
+## 同机 Docker 首次连接修正
+
+修复分支支持同机 Windows 从本机工作台下载带实际端口与资料库标识的连接包，无需 Tailscale HTTPS。连接器提交前校验目标，服务端也独立拒绝错误资料库标识；跨电脑仍使用 Tailscale。
+
+[GitHub Actions 验证](https://github.com/Mrgu2/Discord-Exporter/actions/runs/40203012273)：Windows Server 2022 和 Ubuntu 的原生连接器测试、真实 Linux 容器中的回环 HTTP 绑定均通过。容器测试使用虚构账号，覆盖保存连接、暂停自动任务和错误资料库拒绝提交。本机 362 项 Python 回归、Mac 助手构建签名及 390/1360 连接界面检查通过。
+
+这不等于 Windows Docker Desktop/WSL 与真实浏览器账号的完整实机验收。修复尚未进入上方旧版 Release，不能用旧包验证新流程。

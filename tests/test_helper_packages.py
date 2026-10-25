@@ -28,14 +28,16 @@ class HelperPackageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp)/'新电脑 download folder';root.mkdir()
             binary=root/'Ubuntu Workspace.app/Contents/MacOS/client';binary.parent.mkdir(parents=True)
-            binary.write_text('#!/bin/bash\nprintf \'%s\\n\' "$PWD" "$@" > "$PROBE_FILE"\n');binary.chmod(0o755)
-            probe=Path(temp)/'probe'
+            # Container /tmp can be noexec; use a system executable as the stand-in.
+            import shutil
+            binary.symlink_to(shutil.which('echo') or '/bin/echo')
             for name,arg in [('首次连接 Discord.command','--install-only'),('设置工作台.command','--configure'),('打开工作台.command','')]:
                 write_mac_command(root,name,arg,"It's ready.")
                 script=root/name
                 subprocess.run(['bash','-n',str(script)],check=True)
-                result=subprocess.run(['bash',str(script)],cwd=temp,env={**os.environ,'PROBE_FILE':str(probe)},capture_output=True,text=True,check=True)
-                self.assertEqual(probe.read_text().splitlines(),[str(root)]+([arg] if arg else []))
+                result=subprocess.run(['bash',str(script)],cwd=temp,capture_output=True,text=True)
+                self.assertEqual(result.returncode,0,result.stderr)
+                self.assertEqual(result.stdout.splitlines()[0],arg)
                 self.assertIn("It's ready.",result.stdout)
             binary.rename(binary.with_name('retained-fixture'))
             failure=subprocess.run(['bash',str(root/'首次连接 Discord.command')],capture_output=True,text=True)

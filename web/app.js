@@ -487,7 +487,7 @@
     const connectionLabel = connectingBrowser ? '正在连接 Discord…' : needsAttention ? '需要重新连接' : isOffline ? '暂时离线' : hasConnectionData || browserConnected ? '已连接' : discordCredential === false ? '还未连接 Discord' : '账号已准备好';
     const indicator = node('span', `status-dot${isOffline || needsAttention ? ' error' : !hasConnectionData ? ' pending' : ''}`);
     $('connection-state').replaceChildren(indicator, document.createTextNode(connectionLabel));
-    text('connection-detail', connectingBrowser ? '请在打开的窗口中登录 Discord，完成后会自动识别。' : needsAttention ? '请在常开 Mac 上重新连接账号。' : isOffline ? `距上次成功保存 ${lastSuccess ? elapsed(lastSuccess) : '尚无记录'}，网络恢复后会自动重试。` : hasConnectionData || browserConnected ? '可以保存对话，也可以从已有内容生成稿件。' : discordCredential === false ? isLocal ? '首次会打开登录窗口，无需填写密钥。' : '请先在常开 Mac 上连接 Discord。' : '可以开始保存，保存成功后自动追踪更新。');
+    text('connection-detail', connectingBrowser ? data.platform?.system === 'darwin' ? '建议使用账号和密码登录；扫码若卡在人机验证，请改用账号密码。登录后会自动识别。' : '请在打开的窗口中登录 Discord，完成后会自动识别。' : needsAttention ? '请在常开 Mac 上重新连接账号。' : isOffline ? `距上次成功保存 ${lastSuccess ? elapsed(lastSuccess) : '尚无记录'}，网络恢复后会自动重试。` : hasConnectionData || browserConnected ? '可以保存对话，也可以从已有内容生成稿件。' : discordCredential === false ? isLocal ? '首次会打开登录窗口，无需填写密钥。' : '请先在常开 Mac 上连接 Discord。' : '可以开始保存，保存成功后自动追踪更新。');
     $('connection-detail').hidden = !(connectingBrowser || needsAttention || isOffline || discordCredential === false);
     $('connect-browser-button').disabled = busy || !isLocal;
     $('connect-browser-button').querySelector('span').textContent = !isLocal ? '请在 Mac 上连接' : connectingBrowser ? '正在连接…' : discordCredential ? '重新连接 Discord' : '连接 Discord';

@@ -2,7 +2,7 @@
 
 保存有权访问的 Discord 频道，按指定答疑人整理文字稿和长图。Mac 原生运行；Ubuntu 和 Windows x64 使用 Docker（Windows 为预览版）。
 
-[下载发布包](https://github.com/Mrgu2/Discord-Exporter/releases/tag/v0.1.1) · [Mac 安装](docs/MAC.md) · [Ubuntu 安装](docs/DOCKER.md) · [Windows 安装](docs/WINDOWS_DOCKER.md)
+[下载发布包](https://github.com/Mrgu2/Discord-Exporter/releases/tag/v0.1.2) · [Mac 安装](docs/MAC.md) · [Ubuntu 安装](docs/DOCKER.md) · [Windows 安装](docs/WINDOWS_DOCKER.md)
 
 ## 主要功能
 
@@ -26,8 +26,8 @@
 
 | 安装在哪台电脑 | 下载一个文件 | 教程 |
 | --- | --- | --- |
-| Mac 本地运行 | [Mac 安装包](https://github.com/Mrgu2/Discord-Exporter/releases/download/v0.1.1/DiscordArchive-source.zip) | [安装与登录](docs/MAC.md) |
-| Ubuntu / Windows x64 | [Docker 完整离线包](https://github.com/Mrgu2/Discord-Exporter/releases/download/v0.1.1/DiscordArchive-Docker-complete-preview.zip) | [Ubuntu](docs/DOCKER.md) · [Windows（预览）](docs/WINDOWS_DOCKER.md) |
+| Mac 本地运行 | [Mac 安装包](https://github.com/Mrgu2/Discord-Exporter/releases/download/v0.1.2/DiscordArchive-source.zip) | [安装与登录](docs/MAC.md) |
+| Ubuntu / Windows x64 | [Docker 完整离线包](https://github.com/Mrgu2/Discord-Exporter/releases/download/v0.1.2/DiscordArchive-Docker-complete-preview.zip) | [Ubuntu](docs/DOCKER.md) · [Windows（预览）](docs/WINDOWS_DOCKER.md) |
 
 Mac 本地直接登录；Docker 首次连接使用浏览器扩展。Windows Docker 尚未实机验收。
 
@@ -35,8 +35,8 @@ Mac 本地直接登录；Docker 首次连接使用浏览器扩展。Windows Dock
 
 服务器已经部署好时，访问电脑只需登录助手，不用安装完整项目或语音模型：
 
-- **M 系列 Mac（arm64）**：[下载 Mac 登录助手](https://github.com/Mrgu2/Discord-Exporter/releases/download/v0.1.1/login-assistant-mac.zip)。
-- **Windows x64**：[下载 Windows 登录助手](https://github.com/Mrgu2/Discord-Exporter/releases/download/v0.1.1/login-assistant-windows.zip)（预览，待实机验收）。
+- **M 系列 Mac（arm64）**：[下载 Mac 登录助手](https://github.com/Mrgu2/Discord-Exporter/releases/download/v0.1.2/login-assistant-mac.zip)。
+- **Windows x64**：[下载 Windows 登录助手](https://github.com/Mrgu2/Discord-Exporter/releases/download/v0.1.2/login-assistant-windows.zip)（预览，待实机验收）。
 
 解压后 Mac 打开 **打开工作台.command**，Windows 打开 **Ubuntu Workspace.exe**，按 [连接与访问教程](docs/ACCESS.md)操作。浏览器能直接访问时也可不装助手；手机使用 Tailscale 与浏览器。
 

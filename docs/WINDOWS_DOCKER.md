@@ -1,5 +1,7 @@
 # Windows Docker 本地完整版（预览）
 
+> 同机免 Tailscale 绑定已进入 main，当前 Release 安装包尚未包含此修复。旧包仍需 Tailscale HTTPS，新流程待新版包发布。
+
 流程：**安装并打开本机工作台 → [连接 Discord](LOGIN_ASSISTANT.md#首次连接-discord) → [首次出图](USAGE.md#第一次采集出图)**。
 
 在 Windows 上运行同一个 Linux 镜像，采集、small 语音转写和出图均在本机容器完成。它与“Windows 访问 Ubuntu 客户端”是两种用途。

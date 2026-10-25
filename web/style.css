@@ -304,3 +304,5 @@ th:first-child { width: 23%; } th:nth-child(2) { width: 17%; } th:nth-child(3) {
 #clawbot-qr { display: block; max-width: 100%; height: auto; background: white; margin-top: 12px; }
 
 #delivery-history { max-height: 360px; overflow-y: auto; overscroll-behavior: contain; }
+
+.first-output-guide .form-help { margin: 6px 0 12px; }

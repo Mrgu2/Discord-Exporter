@@ -69,9 +69,11 @@ if $speech; then
   "$selected_python" scripts/install_speech.py
 fi
 if [[ -f helpers/login-assistant-mac.zip ]]; then
-  "$selected_python" scripts/install_login_assistants.py --mac-zip helpers/login-assistant-mac.zip
+  if ! "$selected_python" scripts/install_login_assistants.py --mac-zip helpers/login-assistant-mac.zip; then
+    echo 'Ubuntu 连接工具未能发布；Mac 本地安装继续。如需访问 Ubuntu，请重新取得并校验对应客户端包。'
+  fi
 else
-  echo '缺少首次连接工具，请取得包含 helpers/login-assistant-mac.zip 的完整分发包。'; exit 1
+  echo '未附带 Ubuntu 连接工具；不影响 Mac 本地安装与直接登录。'
 fi
 echo '安装检查通过。首次使用：连接 Discord → 配置频道与答疑人 → 保存一次 → 生成稿件。'
 if $open_page; then "$selected_python" scripts/desktop_launcher.py; fi

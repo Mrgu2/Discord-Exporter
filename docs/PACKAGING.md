@@ -31,7 +31,7 @@ App 使用本地临时签名，没有 Developer ID 公证；另一台 Mac 可能
 
 ## 修正版交付目录与文件位置
 
-当前完整交付目录为 `dist/releases/2026-10-25-readme-ready/`；接收方先双击 `START-HERE.html`，其中的 ZIP 链接指向同目录文件。获取方式与客户端架构见 [获取安装包](DOWNLOADS.md)。
+GitHub 发布版见 [Releases](https://github.com/Mrgu2/Discord-Exporter/releases/tag/v2026.10.25.1)。当前维护者构建目录为 `dist/releases/v2026.10.25.1/`；接收方直接下载 Release 中的三个 ZIP，按平台选用。获取方式与客户端架构见 [获取安装包](DOWNLOADS.md)。
 
 当前修正版及验收边界见 [当前修正版验收](FINAL_PACKAGE_ACCEPTANCE.md)，不同使用方式拿哪些 ZIP 见 [README 文件选择](../README.md#需要拿哪些文件)。
 

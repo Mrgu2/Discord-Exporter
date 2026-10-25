@@ -37,6 +37,7 @@
   let savingChannels = false;
   let loginRequired = false;
   let onboardingEditing = false;
+  let firstOutputActive = null;
   // UI capability only; the server independently authorizes every operation.
   let isLocal = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(location.hostname);
   const autoExportDefaults = { enabled: false, times: ['16:15'], weekdays: [0, 1, 2, 3, 4], render_scales: [1], layout: 'horizontal', presentation: 'reading', target: 'main' };
@@ -351,6 +352,51 @@
     if (lastDraft) link.href = `/drafts/${encodeURIComponent(String(lastDraft))}/`;
     else link.removeAttribute('href');
   }
+  function renderFirstOutput(data, busy, configured) {
+    const drafts = Array.isArray(data.drafts) ? data.drafts : [];
+    const hasImage = drafts.some(draft => [1, 2].some(scale => selectedImageVariant(draft, scale).images.length));
+    if (firstOutputActive === null) firstOutputActive = !hasImage && Number(data.draft_count || drafts.length) <= 1;
+    const guide = $('first-output-guide');
+    guide.hidden = !isLocal || !configured || !firstOutputActive;
+    if (guide.hidden) return;
+    const action = $('first-output-action'), download = $('first-output-download');
+    action.disabled = busy || renderPending.size > 0;
+    download.hidden = true; download.removeAttribute('href');
+    let title, detail, label, run;
+    const draft = drafts.find(row => !busyStatuses.has(row.status) && !['failed', 'error'].includes(row.status));
+    const state = data.state || {};
+    if (!(data.archive?.message_count > 0) || state.last_job_status === 'partial' || (!draft && !state.last_success_at && !(data.runs || []).some(row => row.status === 'success'))) {
+      title = '第一步：确认保存范围';
+      detail = state.last_job_status === 'partial'
+        ? '部分频道保存未完成。请先处理下方错误或频道权限，再重试保存；已有消息保留。'
+        : '首次保存会读取所选频道全部可见历史；日期筛选不限制采集量。请先只选一个消息少的频道。';
+      label = '确认保存所选频道'; run = capture;
+    } else if (!draft) {
+      title = '第二步：生成首份稿件';
+      detail = '保存已完成。先整理最近一轮已保存的目标发言，使用本地证据稿，无需选择纽约交易日期。';
+      label = '生成首份稿件';
+      run = () => {
+        document.querySelector('input[name="scope"][value="latest"]').checked = true;
+        changeScope(); $('draft-mode').value = 'evidence'; updateMode();
+        return createDraft({preventDefault() {}});
+      };
+    } else {
+      const images = selectedImageVariant(draft, 1).images;
+      if (images.length) {
+        title = '图片已生成'; detail = '查看内容后下载 PNG，并打开文件确认文字可读。';
+        label = '查看图片'; run = () => openPreview(images, draft.title || '首张图片');
+        download.hidden = false; download.href = images[0]; download.download = imageDownloadName(images[0]);
+        download.textContent = images.length > 1 ? '下载第 1 张' : '下载图片';
+        download.onclick = () => { firstOutputActive = false; guide.hidden = true; };
+      } else {
+        title = '第三步：生成第一张图片'; detail = '稿件已就绪。先生成标准 1× 主图，再查看并下载。';
+        label = '生成第一张图片'; run = () => renderImage(draft, 'main', 1);
+      }
+    }
+    text('first-output-title', title); text('first-output-detail', detail); text('first-output-action', label);
+    action.onclick = async () => { action.disabled = true; await run(); if (snapshot) renderFirstOutput(snapshot, Boolean(snapshot.state?.active_job || snapshot.state?.queue_length || pendingAction), configured); };
+    if (busy) text('first-output-detail', '当前任务正在后台处理，完成后这里会自动显示下一步。');
+  }
   function renderState(data) {
     isLocal = ['localhost','127.0.0.1','::1','[::1]'].includes(location.hostname) || data.remote?.administrator === true;
     remoteRenderJobs = data.state?.render_jobs || [];
@@ -415,6 +461,7 @@
       field.scrollIntoView({block:'center'});
       field.focus();
     };
+    renderFirstOutput(data, busy, configured);
     text('capture-badge', busy ? '正在处理' : `${channels.length} 个已选`);
     $('capture-button').disabled = busy || !channels.length || discordCredential === false;
     $('draft-button').disabled = busy || !channels.length || archive.message_count === 0 || ($('draft-layout').value === 'qa' && !(config.target_author_id || config.target_message_url));
@@ -996,8 +1043,8 @@
       if (onboardingEditing) {
         onboardingEditing = false;
         $('advanced-settings').open = false;
-        $('capture-button').scrollIntoView({block:'center'});
-        $('capture-button').focus();
+        const nextAction = !$('first-output-guide').hidden ? $('first-output-action') : $('capture-button');
+        nextAction.scrollIntoView({block:'center'}); nextAction.focus();
       }
     } catch (error) { showToast(error.message, true); text('config-save-status', '未保存，请检查填写内容。'); }
     finally { button.disabled = false; button.textContent = '保存设置'; }

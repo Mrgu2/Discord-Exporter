@@ -2,7 +2,9 @@
 
 保存自己有权访问的 Discord 频道，围绕指定答疑人整理文字稿和长图。可以在 Mac 本地运行，也可以部署到 Ubuntu，通过私网工作台操作。
 
-开始使用：[获取安装包](docs/DOWNLOADS.md) · [Mac 本地安装](docs/MAC.md) · [Ubuntu 部署](docs/LINUX_SETUP.md)
+开始使用：[下载发布包](https://github.com/Mrgu2/Discord-Exporter/releases/tag/v2026.10.25.1) · [选包说明](docs/DOWNLOADS.md) · [Mac 本地安装](docs/MAC.md) · [Ubuntu 部署](docs/LINUX_SETUP.md)
+
+也可将项目交给具备终端权限的 Agent，按 [Agent 安装与验收](docs/AGENT_INSTALL.md)执行；账号确认与系统授权仍由本人处理。
 
 ## 主要功能
 
@@ -24,10 +26,10 @@
 
 | 使用场景 | 下载文件 | 教程 |
 | --- | --- | --- |
-| Mac 本地运行 | [DiscordArchive-source.zip](docs/DOWNLOADS.md#完整项目) | [Mac 安装与登录](docs/MAC.md) |
-| 首次部署 Ubuntu | [DiscordArchive-source.zip](docs/DOWNLOADS.md#完整项目)；连接时另需下面对应的访问客户端 | [Ubuntu 安装与首次连接](docs/LINUX_SETUP.md) |
-| Mac 访问已有 Ubuntu（Apple Silicon / M 系列） | [login-assistant-mac.zip](docs/DOWNLOADS.md#mac-访问客户端)（arm64） | [访问已有 Ubuntu](docs/ACCESS.md) |
-| Windows 访问已有 Ubuntu | [login-assistant-windows.zip](docs/DOWNLOADS.md#windows-访问客户端)（x64） | [访问已有 Ubuntu](docs/ACCESS.md) |
+| Mac 本地运行 | [DiscordArchive-source.zip](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.1/DiscordArchive-source.zip) | [Mac 安装与登录](docs/MAC.md) |
+| 首次部署 Ubuntu | [DiscordArchive-source.zip](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.1/DiscordArchive-source.zip)；连接时另需下面对应的访问客户端 | [Ubuntu 安装与首次连接](docs/LINUX_SETUP.md) |
+| Mac 访问已有 Ubuntu（Apple Silicon / M 系列） | [login-assistant-mac.zip](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.1/login-assistant-mac.zip)（arm64） | [访问已有 Ubuntu](docs/ACCESS.md) |
+| Windows 访问已有 Ubuntu | [login-assistant-windows.zip](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.1/login-assistant-windows.zip)（x64） | [访问已有 Ubuntu](docs/ACCESS.md) |
 | 手机访问已有工作台 | 无需下载项目；手机安装 Tailscale | [手机访问](docs/ACCESS.md#手机访问与-tailscale-ip) |
 
 现有 Mac 访问客户端适用于 Apple Silicon（M 系列），Intel Mac 不要使用此客户端包；完整项目的基础功能与语音支持见 [Mac 教程](docs/MAC.md)。

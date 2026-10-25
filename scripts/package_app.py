@@ -45,7 +45,7 @@ SOURCE_ALLOWLIST = (
     "docs/REFERENCE.md", "docs/INSTALLATION_ACCEPTANCE.md",
 )
 OPTIONAL_SOURCE_ALLOWLIST = (
-    "docs/DOWNLOADS.md",
+    "docs/DOWNLOADS.md", "docs/AGENT_INSTALL.md", "tests/first_output_check.mjs",
     "docs/images/workspace.png", "docs/images/export-example.png",
     "docs/DELIVERY.md", "docs/RECOVERY_PORTS_ACCEPTANCE.md", "tests/test_clawbot.py", "tests/clawbot_check.mjs", "tests/test_delivery.py", "tests/test_listener.py", "tests/delivery_check.mjs",
     "docs/MAC.md", "docs/LINUX_SETUP.md", "docs/ACCESS.md", "docs/USAGE.md", "docs/OPERATIONS.md", "docs/TROUBLESHOOTING.md", "docs/GITHUB_PRIVACY.md", "helpers/login-assistant-mac.zip", "docs/FINAL_PACKAGE_ACCEPTANCE.md",

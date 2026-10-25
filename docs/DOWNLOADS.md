@@ -1,12 +1,19 @@
 # 获取安装包
 
-当前交付版本：**2026-10-25-readme-ready**。
+当前交付版本：**v2026.10.25.1（预览版）**。
 
 ## 从哪里取得
 
-请向项目提供者获取这个版本的**完整分发文件夹或该文件夹的下载链接**。解压后先打开其中的 **START-HERE.html**，按使用场景点击对应 ZIP；这个页面直接链接同目录的三个文件。不要只收到一个来历不明的 App 就运行。
+打开 [GitHub Releases](https://github.com/Mrgu2/Discord-Exporter/releases/tag/v2026.10.25.1)，在 **Assets** 中选择对应 ZIP。仓库目前为私有，需要登录拥有访问权限的 GitHub 账号；无权限时下载链接可能显示 404。
 
-在本项目工作目录中，完整分发文件夹位于 `dist/releases/2026-10-25-readme-ready/`。这一路径是本地位置，不是公开下载网址。仅有源码仓库时，可按 [打包说明](PACKAGING.md)生成同样的交付文件；当前页面不假定存在已发布的公共 Release。
+| 用途 | 下载 |
+| --- | --- |
+| Mac 本地完整安装 / Ubuntu 服务端 | [DiscordArchive-source.zip](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.1/DiscordArchive-source.zip) |
+| Apple Silicon Mac 访问 Ubuntu | [login-assistant-mac.zip](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.1/login-assistant-mac.zip) |
+| Windows x64 访问 Ubuntu | [login-assistant-windows.zip](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.1/login-assistant-windows.zip) |
+| 校验上述三个 ZIP | [CHECKSUMS.sha256](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.1/CHECKSUMS.sha256) |
+
+不要将 GitHub 自动生成的 **Source code (zip)** 当作 `DiscordArchive-source.zip`：自动源码快照没有构建好的原生入口和内嵌客户端。需要本地重新构建时，见 [打包说明](PACKAGING.md)。本版构建产物位于项目的 `dist/releases/v2026.10.25.1/`，这一路径仅供维护者使用。
 
 **如果已解压源码 ZIP，并能看到 Install.command、app.py 和 docs/，你已经拿到完整项目，无需再次下载源码包。** 直接进入 [Mac 安装](MAC.md) 或 [Ubuntu 安装](LINUX_SETUP.md)。
 

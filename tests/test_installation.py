@@ -2,6 +2,8 @@ import importlib.util
 import subprocess
 import re
 import shutil
+import sys
+import shlex
 import tempfile
 import unittest
 from pathlib import Path
@@ -23,6 +25,23 @@ class InstallationTests(unittest.TestCase):
         major = int(subprocess.check_output(['node', '-p', 'process.versions.node.split(".")[0]'], text=True))
         completed = subprocess.run(['node', '-e', expression], capture_output=True, text=True)
         self.assertEqual(completed.returncode, 0 if major >= 20 else 1, completed.stderr)
+
+    def test_missing_or_invalid_optional_assistant_keeps_local_install_available(self):
+        script = (ROOT / 'scripts/install_mac.sh').read_text()
+        block = script[script.index('if [[ -f helpers/login-assistant-mac.zip ]]'):script.index("echo '安装检查通过")]
+        for invalid in (False, True):
+            with self.subTest(invalid=invalid), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                (root/'scripts').mkdir()
+                shutil.copy2(ROOT/'scripts/install_login_assistants.py', root/'scripts/install_login_assistants.py')
+                sentinel = root/'data/config.json'; sentinel.parent.mkdir(); sentinel.write_text('original-config')
+                if invalid:
+                    (root/'helpers').mkdir(); (root/'helpers/login-assistant-mac.zip').write_text('not-a-zip')
+                result = subprocess.run(['bash', '-eu', '-c', 'selected_python='+shlex.quote(sys.executable)+'\n'+block+'\necho LOCAL_INSTALL_CONTINUES'], cwd=root, text=True, capture_output=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn('LOCAL_INSTALL_CONTINUES', result.stdout)
+                self.assertEqual(sentinel.read_text(), 'original-config')
+                self.assertFalse((root/'.local/login-assistants/login-assistant-mac.zip').exists())
 
     def test_first_install_has_no_private_configuration_and_speech_is_opt_in(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -1,0 +1,5 @@
+# Optional limits. Select this file via COMPOSE_FILE; it is not enabled by default.
+services:
+  app:
+    cpus: ${ARCHIVE_CPUS:-2}
+    mem_limit: ${ARCHIVE_MEMORY:-4g}

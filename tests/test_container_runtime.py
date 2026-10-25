@@ -70,3 +70,25 @@ class SupervisorTests(unittest.TestCase):
                 proc.terminate();proc.wait(timeout=5);proc=spawn();wait(lambda s:s['running'])
             finally:
                 proc.terminate();proc.wait(timeout=5)
+
+    def test_shutdown_during_child_exec_restart_does_not_hang(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            (root/'app.py').write_text("import signal,time,os,sys\nfrom pathlib import Path\nrestart=False\ndef term(*_):\n global restart\n restart=True\nsignal.signal(signal.SIGTERM,term)\nPath('"+str(root/'ready')+"').write_text('ready')\nwhile not restart:time.sleep(.01)\ntime.sleep(1)\nos.execv(sys.executable,[sys.executable,'-c','import time;time.sleep(60)'])\n")
+            env={**os.environ,'DISCORD_ARCHIVE_DOCKER':'1','ARCHIVE_ROOT':str(root),'DISCORD_ARCHIVE_CONTROL_DIR':str(root/'ipc')}
+            proc=subprocess.Popen([sys.executable,str(ROOT/'docker/supervisor.py')],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            child=None
+            try:
+                deadline=time.monotonic()+5
+                while not (root/'ready').exists() and time.monotonic()<deadline:time.sleep(.02)
+                self.assertTrue((root/'ready').exists())
+                with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as sock:
+                    sock.connect(str(root/'ipc/control.sock'));sock.sendall(b'{"action":"status"}\n');child=json.loads(sock.recv(4096))['pid']
+                proc.terminate()
+                try:proc.wait(timeout=4)
+                except subprocess.TimeoutExpired:self.fail('Supervisor hangs when SIGTERM overlaps child exec restart')
+            finally:
+                if proc.poll() is None and child:
+                    try:os.kill(child,signal.SIGTERM)
+                    except ProcessLookupError:pass
+                    proc.wait(timeout=5)

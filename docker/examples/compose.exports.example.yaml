@@ -1,0 +1,10 @@
+# Copy to compose.exports.yaml and add it to COMPOSE_FILE in .env.
+# Create ARCHIVE_EXPORT_DIR first. In the web UI, set export copy directory to /exports.
+services:
+  app:
+    volumes:
+      - type: bind
+        source: ${ARCHIVE_EXPORT_DIR:?Set ARCHIVE_EXPORT_DIR to an existing absolute folder}
+        target: /exports
+        bind:
+          create_host_path: false

@@ -2,7 +2,7 @@
 
 保存有权访问的 Discord 频道，按指定答疑人整理文字稿和长图。支持 Mac 本地运行、Ubuntu Docker 部署。
 
-[下载发布包](https://github.com/Mrgu2/Discord-Exporter/releases/tag/v2026.10.25.2) · [Mac 安装](docs/MAC.md) · [Ubuntu Docker 安装](docs/DOCKER.md)
+[下载发布包](https://github.com/Mrgu2/Discord-Exporter/releases/tag/v2026.10.25.3) · [Mac 安装](docs/MAC.md) · [Ubuntu Docker 安装](docs/DOCKER.md)
 
 ## 主要功能
 
@@ -24,17 +24,19 @@
 
 | 使用场景 | 下载文件 | 教程 |
 | --- | --- | --- |
-| Mac 本地运行 | [DiscordArchive-source.zip](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.2/DiscordArchive-source.zip) | [安装与登录](docs/MAC.md) |
-| Ubuntu Docker（x86_64） | [部署 ZIP](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.2/DiscordArchive-Docker-linux-amd64.zip) + [离线镜像，含 small](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.2/discordarchive-linux-amd64.tar.gz) | [安装与首次连接](docs/DOCKER.md) |
-| Mac 访问已有 Ubuntu | [login-assistant-mac.zip](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.2/login-assistant-mac.zip)（仅 M 系列 / arm64） | [日常访问](docs/ACCESS.md) |
-| Windows 访问已有 Ubuntu | [login-assistant-windows.zip](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.2/login-assistant-windows.zip)（x64，待实机验收） | [日常访问](docs/ACCESS.md) |
+| Mac 本地运行 | [DiscordArchive-source.zip](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.3/DiscordArchive-source.zip) | [安装与登录](docs/MAC.md) |
+| Ubuntu Docker（x86_64） | [部署 ZIP](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.3/DiscordArchive-Docker-linux-amd64.zip) + [离线镜像，含 small](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.3/discordarchive-linux-amd64.tar.gz) | [安装与首次连接](docs/DOCKER.md) |
+| Mac 访问已有 Ubuntu | [login-assistant-mac.zip](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.3/login-assistant-mac.zip)（仅 M 系列 / arm64） | [日常访问](docs/ACCESS.md) |
+| Windows 访问已有 Ubuntu | [login-assistant-windows.zip](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.3/login-assistant-windows.zip)（x64，待实机验收） | [日常访问](docs/ACCESS.md) |
 | 手机访问已有工作台 | 安装 Tailscale，无需项目或模型 | [手机访问](docs/ACCESS.md#手机访问与-tailscale-ip) |
 
 Mac 本地直接登录；Ubuntu 首次连接使用浏览器扩展，换电脑访问不重复绑定。客户端架构与文件校验见 [选包说明](docs/DOWNLOADS.md)。
 
 **第一次请选消息少的频道。** 首次保存读取完整可见历史，稿件日期不限制采集量。安装并连接后，按 [首次采集出图](docs/USAGE.md#第一次采集出图)操作。
 
-按需配置：[语音](docs/USAGE.md#语音转写可选) · [自动推送](docs/DELIVERY.md) · [自启动与日常管理](docs/OPERATIONS.md) · [Agent 安装](docs/AGENT_INSTALL.md)。
+Windows 本机 Docker 的配置预览见 [Windows 教程](docs/WINDOWS_DOCKER.md)；可从本版 Release 下载[完整离线包](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.3/DiscordArchive-Docker-complete-preview.zip)，尚未完成 Windows 实机验收。
+
+按需配置：[目录、端口与 Docker 变量](docs/DOCKER_CONFIG.md) · [语音](docs/USAGE.md#语音转写可选) · [自动推送](docs/DELIVERY.md) · [自启动与日常管理](docs/OPERATIONS.md) · [Agent 安装](docs/AGENT_INSTALL.md)。
 
 </details>
 

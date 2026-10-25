@@ -31,7 +31,7 @@ App 使用本地临时签名，没有 Developer ID 公证；另一台 Mac 可能
 
 ## 修正版交付目录与文件位置
 
-当前分发见 [Release](https://github.com/Mrgu2/Discord-Exporter/releases/tag/v2026.10.25.2)，文件选择见 [下载说明](DOWNLOADS.md)。程序验收包保留在 `dist/releases/v2026.10.25.2-final/`；精简文档同步版在 `dist/releases/v2026.10.25.2-docs/`，含安装包、客户端、校验文件、选包页与验收说明。
+当前分发见 [Release](https://github.com/Mrgu2/Discord-Exporter/releases/tag/v2026.10.25.3)，文件选择见 [下载说明](DOWNLOADS.md)。本版完整分发目录为 `dist/releases/v2026.10.25.3/`，含源码包、客户端、Docker 配置、离线镜像和完整离线 ZIP。旧版本保留。
 
 构建中间文件放 `dist/builds/`，交付物放 `dist/releases/`，测试记录放 `artifacts/`。只有需要本人加载浏览器扩展时，才把对应扩展导出到下载目录；不移动浏览器正在加载的目录。
 

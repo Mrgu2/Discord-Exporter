@@ -30,8 +30,8 @@ RUN python scripts/install_login_assistants.py --mac-zip helpers/login-assistant
  && chmod -R a+rX /app/scripts /app/docker /app/discord_archive /app/web \
  && rm -rf /var/lib/apt/lists/* /root/.cache /root/.npm
 COPY --chown=app:app models/ /app/.runtime/models/
-RUN /opt/whisper/bin/python -c "from pathlib import Path; from faster_whisper import WhisperModel; from faster_whisper.utils import download_model; p=Path('/app/.runtime/models/faster-whisper-small'); download_model('small',output_dir=str(p)) if not (p/'model.bin').is_file() else None; WhisperModel(str(p),device='cpu',compute_type='int8',cpu_threads=2,local_files_only=True)" \
- && chown -R app:app /app/.runtime/models
+USER app
+RUN /opt/whisper/bin/python -c "from pathlib import Path; from faster_whisper import WhisperModel; from faster_whisper.utils import download_model; p=Path('/app/.runtime/models/faster-whisper-small'); download_model('small',output_dir=str(p)) if not (p/'model.bin').is_file() else None; WhisperModel(str(p),device='cpu',compute_type='int8',cpu_threads=2,local_files_only=True)"
 USER app
 EXPOSE 8765
 HEALTHCHECK --interval=30s --timeout=10s --start-period=45s --retries=3 CMD ["python","docker/manage.py","health"]

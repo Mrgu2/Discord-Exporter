@@ -6,12 +6,17 @@ cd "$(dirname "$0")"
 docker compose version >/dev/null
 if [[ ! -f .env ]]; then
   umask 077
-  printf 'ARCHIVE_IMAGE=discordarchive-linux:v2026.10.25.2\nARCHIVE_PORT=8765\n' > .env
+  if [[ -f .env.example ]]; then cp .env.example .env; elif [[ -f env.example ]]; then cp env.example .env; else
+    printf 'ARCHIVE_IMAGE=discordarchive-linux:v2026.10.25.3\nARCHIVE_PORT=8765\n' > .env
+  fi
 fi
-if ! docker image inspect discordarchive-linux:v2026.10.25.2 >/dev/null 2>&1; then
+image=$(docker compose config --images | head -n 1)
+[[ -n "$image" ]] || { echo '未确认应用镜像，请检查 .env。'; exit 1; }
+if ! docker image inspect "$image" >/dev/null 2>&1; then
   [[ -f discordarchive-linux-amd64.tar.gz ]] || { echo '缺少离线镜像，请从同一 Release 下载 discordarchive-linux-amd64.tar.gz。'; exit 1; }
   sha256sum -c CHECKSUMS.sha256
   gzip -dc discordarchive-linux-amd64.tar.gz | docker load
 fi
+docker image inspect "$image" >/dev/null 2>&1 || { echo '镜像文件未包含 .env 指定的标签，请核对版本。'; exit 1; }
 docker compose run --rm --no-deps --entrypoint python app docker/initialize.py
 bash Start-Docker.sh

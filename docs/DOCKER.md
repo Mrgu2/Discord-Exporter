@@ -2,6 +2,8 @@
 
 适用于 Ubuntu x86_64（amd64）。镜像包含运行环境、浏览器、FFmpeg、中文字体和 small 模型，使用与 Mac 相同的工作台。Mac 继续[原生安装](MAC.md)。
 
+已下载本版[完整离线 ZIP](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.3/DiscordArchive-Docker-complete-preview.zip)时，镜像已在其中，直接从第 2 节安装；不必重复下载独立镜像。Windows 入口尚待实机验收。
+
 ## 1. 准备服务器与文件
 
 服务器需 Docker Engine、Compose v2、Tailscale，建议至少留 12 GiB 空间。检查：
@@ -15,7 +17,7 @@ sudo docker compose version
 
 架构应为 `x86_64`。缺 Docker 时按 [Docker 官方 Ubuntu 安装说明](https://docs.docker.com/engine/install/ubuntu/)安装 Engine 与 Compose；保留已有容器环境。
 
-从 [Release](https://github.com/Mrgu2/Discord-Exporter/releases/tag/v2026.10.25.2)下载**两个文件**，通过 SFTP / scp 上传到 Ubuntu 的同一个新目录，例如 `~/apps/discordarchive-docker`：
+从 [Release](https://github.com/Mrgu2/Discord-Exporter/releases/tag/v2026.10.25.3)下载**两个文件**，通过 SFTP / scp 上传到 Ubuntu 的同一个新目录，例如 `~/apps/discordarchive-docker`：
 
 | 文件 | 用途 |
 | --- | --- |
@@ -26,13 +28,14 @@ sudo docker compose version
 
 ## 2. 安装并启动
 
-以下在 **Ubuntu SSH 终端**执行，路径换成实际上传目录：
+以下在 **Ubuntu SSH 终端**进入解压后的部署目录执行。若能看到 `Install-Docker.sh` 和 `compose.yaml`，不用再解压：
 
 ```sh
 cd ~/apps/discordarchive-docker
-unzip -n DiscordArchive-Docker-linux-amd64.zip
 sudo bash Install-Docker.sh
 ```
+
+尚未解压时，将完整预览包解压到一个新目录；标准配置 ZIP 解压后还需将同版镜像放到该目录。需要先查看配置时，用 [Linux 可复制示例](DOCKER_CONFIG.md#linux)，其命令也会安装。
 
 缺 `unzip` 时先执行 `sudo apt-get update && sudo apt-get install -y unzip`。安装器导入镜像、实际加载 small CPU INT8 模型并启动应用，看到“**应用已就绪**”后继续。
 
@@ -61,6 +64,8 @@ Tailscale 在宿主机运行，容器无管理权限。工作台仅允许配置�
 按 [首次连接 Discord](LOGIN_ASSISTANT.md#首次连接-discord)，在自己的 Mac / Windows 日常浏览器确认账号。访问电脑无需项目或模型；连接完成后 Ubuntu 独立运行，已有连接不重复绑定。
 
 再按 [首次采集出图](USAGE.md#第一次采集出图)操作：选小频道 → 保存 → 出稿 → 出图 → 下载。**首次保存读取全部可见历史，稿件日期不限制采集量。** 语音默认启用，推送默认关闭；[推送配置](DELIVERY.md)在此 Ubuntu 工作台完成。
+
+目录挂载、端口、变量、资源限制与备份见 [Docker 配置指南](DOCKER_CONFIG.md)。Windows Docker Desktop 另见 [预览教程](WINDOWS_DOCKER.md)。
 
 ## 日常管理与资料保存
 

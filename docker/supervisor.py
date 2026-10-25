@@ -68,6 +68,10 @@ def main():
                 connection.sendall(json.dumps(result).encode()+b'\n')
     finally:
         stopping.set();server.close()
-        if child and child.poll() is None:
-            child.terminate();child.wait()
+        while child and child.poll() is None:
+            # A child may exec a restart after the first signal. Signal again
+            # after each grace interval until this same child actually exits.
+            child.terminate()
+            try:child.wait(timeout=1)
+            except subprocess.TimeoutExpired:pass
 if __name__=='__main__':main()

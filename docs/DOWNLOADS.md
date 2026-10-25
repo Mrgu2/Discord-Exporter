@@ -1,13 +1,16 @@
 # 获取安装包
 
-当前版本：**v2026.10.25.2（预览版）**。[打开 Release](https://github.com/Mrgu2/Discord-Exporter/releases/tag/v2026.10.25.2)，在 **Assets** 中下载。私有仓库需有权限的 GitHub 账号；无权限可能返回 404。
+当前版本：**v2026.10.25.3（预览版）**。[打开 Release](https://github.com/Mrgu2/Discord-Exporter/releases/tag/v2026.10.25.3)，在 **Assets** 中下载。私有仓库需有权限的 GitHub 账号；无权限可能返回 404。
 
 | 用途 | 文件 | 教程 |
 | --- | --- | --- |
-| Mac 本地完整安装 | [DiscordArchive-source.zip](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.2/DiscordArchive-source.zip) | [Mac](MAC.md) |
-| Ubuntu Docker（x86_64） | [部署 ZIP](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.2/DiscordArchive-Docker-linux-amd64.zip) + [离线镜像，含 small](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.2/discordarchive-linux-amd64.tar.gz) | [Docker](DOCKER.md) |
-| Mac 访问 Ubuntu | [login-assistant-mac.zip](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.2/login-assistant-mac.zip)（仅 M 系列 / arm64） | [访问](ACCESS.md) |
-| Windows 访问 Ubuntu | [login-assistant-windows.zip](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.2/login-assistant-windows.zip)（x64，待实机验收） | [访问](ACCESS.md) |
+| Mac 本地完整安装 | [DiscordArchive-source.zip](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.3/DiscordArchive-source.zip) | [Mac](MAC.md) |
+| Ubuntu Docker（x86_64） | [部署 ZIP](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.3/DiscordArchive-Docker-linux-amd64.zip) + [离线镜像，含 small](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.3/discordarchive-linux-amd64.tar.gz) | [Docker](DOCKER.md) |
+| Windows 本机 Docker（x64，预览） | [完整离线 ZIP](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.3/DiscordArchive-Docker-complete-preview.zip) | [Windows Docker](WINDOWS_DOCKER.md)，未实机验收 |
+| Mac 访问 Ubuntu | [login-assistant-mac.zip](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.3/login-assistant-mac.zip)（仅 M 系列 / arm64） | [访问](ACCESS.md) |
+| Windows 访问 Ubuntu | [login-assistant-windows.zip](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.3/login-assistant-windows.zip)（x64，待实机验收） | [访问](ACCESS.md) |
+
+Linux 也可下载同一个[完整离线 ZIP](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.3/DiscordArchive-Docker-complete-preview.zip)，其中已含镜像；不要同时重复下载独立镜像。仅需小配置包时，可选 [Windows 配置 ZIP](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.3/DiscordArchive-Docker-desktop-preview.zip)并配套同版镜像。
 
 **不要选 GitHub 自动生成的 Source code (zip)**：它没有构建好的 App 和内嵌客户端。仅访问 Ubuntu 的电脑不用安装完整项目或模型。
 
@@ -27,7 +30,7 @@
 
 ## 核对文件
 
-下载 [CHECKSUMS.sha256](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.2/CHECKSUMS.sha256)，对照所选文件的 SHA-256：
+下载 [CHECKSUMS.sha256](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.3/CHECKSUMS.sha256)，对照所选文件的 SHA-256：
 
 ```sh
 # Mac；文件名换成自己下载的文件

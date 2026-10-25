@@ -7,3 +7,8 @@ Avoid unnecessary secondary labels and descriptions. Let the layout do the expla
 当前已确认：应用界面采用 A「雾蓝工作台」；导出长图保留旧版白底黑字、灰色回答竖线。不要自动将二者统一成同一种配色。
 
 依据：用户认可并要求遵循的 [Zihua 的帖子](https://x.com/luinlee/status/2113085361836744764)。
+
+
+# 推送与 Release
+
+用户说“推”时，同时提交、推送当前任务相关源码，并重新构建和更新对应的 GitHub Release 分发压缩包，不能只推源码。按当前支持的平台和安装方式选择分发包，确保包内源码对应本次提交；同步 README/下载入口和校验和。发布前检查隐私与适当回归，上传后下载核对 SHA-256，保持仓库现有可见性，不覆盖或删除私有数据与旧分发文件。遇到真实阻塞时明确说明未完成的部分。

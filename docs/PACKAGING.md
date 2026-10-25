@@ -31,29 +31,15 @@ App 使用本地临时签名，没有 Developer ID 公证；另一台 Mac 可能
 
 ## 修正版交付目录与文件位置
 
-GitHub 发布版见 [Releases](https://github.com/Mrgu2/Discord-Exporter/releases/tag/v2026.10.25.2)。当前维护者构建目录为 `dist/releases/v2026.10.25.2/`；接收方按使用场景选择文件；Ubuntu Docker 另需离线镜像，见下方说明。获取方式与客户端架构见 [获取安装包](DOWNLOADS.md)。
+当前分发见 [Release](https://github.com/Mrgu2/Discord-Exporter/releases/tag/v2026.10.25.2)，文件选择见 [下载说明](DOWNLOADS.md)。程序验收包保留在 `dist/releases/v2026.10.25.2-final/`；精简文档同步版在 `dist/releases/v2026.10.25.2-docs/`，含安装包、客户端、校验文件、选包页与验收说明。
 
-当前修正版及验收边界见 [当前修正版验收](FINAL_PACKAGE_ACCEPTANCE.md)，不同使用方式拿哪些 ZIP 见 [README 文件选择](../README.md#需要拿哪些文件)。
+构建中间文件放 `dist/builds/`，交付物放 `dist/releases/`，测试记录放 `artifacts/`。只有需要本人加载浏览器扩展时，才把对应扩展导出到下载目录；不移动浏览器正在加载的目录。
 
-本项目生成文件统一留在工作目录内：构建中间文件放 `dist/builds/`，干净的交付文件放 `dist/releases/`，验收截图、JSON、样例和报告放 `artifacts/`，可复用说明放 `docs/`。不额外向下载目录导出源码包、客户端包或测试目录。只有本人需要手动加载/更新浏览器扩展时，才导出对应 `Browser Extension` 到下载目录的固定文件夹；不移动浏览器仍在加载的扩展目录。
-
-交付目录提供：
-
-- `DiscordArchive-source.zip`：Mac 本地完整安装或 Ubuntu 服务端安装；内含 Mac 连接包。
-- `login-assistant-mac.zip`：Apple Silicon Mac 访问 Ubuntu 时单独使用。
-- `login-assistant-windows.zip`：Windows x64 访问 Ubuntu 时单独使用，尚待实机验收。
-- `CHECKSUMS.sha256`：上面三个原始 ZIP 的哈希。
-- `FILES.txt`：简明的平台与文件对应关系。
-- `START-HERE.html`：离线可打开的选包页面，含三个 ZIP 的直接链接。
-- `ACCEPTANCE.md`：该版本的验收范围与限制。
-
-下载接收方核对方式：Mac 在交付目录执行 `shasum -a 256 -c CHECKSUMS.sha256`；Ubuntu 执行 `sha256sum -c CHECKSUMS.sha256`。工作台下载包附加当前地址信息，字节与交付原始包不同，不用这个清单校验工作台专用包，也不要把专用包拿回服务器发布。
-
-文档同步版保持应用、安装与首次连接代码和已验收修正版一致；公开验收记录进入源码白名单，私有 `artifacts/` 机器记录不进入交付包。旧构建和测试文件保留，不覆盖、不删除。
+工作台专用下载会附加服务器地址，字节与 Release 原包不同，不能用原包哈希核对，也不能拿回服务器作为通用包发布。旧构建和原数据保留。
 
 ## 分享与隐私
 
-**不要直接压缩自己的项目文件夹。** Mac 本地模式分享重新构建的 `DiscordArchive-source.zip`；Ubuntu 部署另提供访问电脑对应的连接包 ZIP；两种访问电脑都用时才提供两个。普通访问端只拿对应客户端包。
+**不要直接压缩自己的项目文件夹。** Mac 分享源码分发 ZIP；Ubuntu Docker 分享部署 ZIP 与离线镜像；仅访问服务器的人按平台拿客户端。
 
 在 Mac 的项目目录执行：
 
@@ -61,13 +47,13 @@ GitHub 发布版见 [Releases](https://github.com/Mrgu2/Discord-Exporter/release
 PATH="$PWD/.runtime/bin:$PATH" python3 scripts/package_app.py
 ```
 
-新版本生成在 `dist/` 下的新版本目录，不会覆盖旧包。独立助手的构建与校验见 [助手说明](LOGIN_ASSISTANT.md)。分发包不含 `data/`、`output/`、登录浏览器资料、凭证、聊天、模型或本机依赖。接收完整项目的新部署需要安装依赖、连接自己的账号并添加频道；只访问已有 Ubuntu 的人不重装项目、不重复授权。迁移自己的历史数据请另看[迁移说明](REFERENCE.md#换到另一台-mac)。
+新版本生成在 `dist/` 下的新版本目录，不会覆盖旧包。独立助手的构建与校验见 [助手说明](LOGIN_ASSISTANT.md)。源码与客户端包不含 `data/`、`output/`、浏览器资料、凭证、聊天、模型或本机依赖；Docker 镜像含公共模型和依赖，不含私人资料。接收完整项目的新部署需要安装依赖、连接自己的账号并添加频道；只访问已有 Ubuntu 的人不重装项目、不重复授权。迁移自己的历史数据请另看[迁移说明](REFERENCE.md#换到另一台-mac)。
 
 只使用本人已有的频道访问权限。普通成员账号自动读取存在 Discord 账号处罚风险；此工具不负责自动发布，也不向外部模型发送群聊。
 
 ## Linux Docker 分发
 
-Docker 版单独交付 `DiscordArchive-Docker-linux-amd64.zip` 与 `discordarchive-linux-amd64.tar.gz`。前者是脚本和教程，后者是带 Chromium、FFmpeg、中文字体与 small 模型的离线镜像；这是上述“源码包不含模型”的例外。镜像只从白名单公共源文件、已校验客户端与公共模型构建，不包含任何命名卷、账号或聊天。
+Docker 版单独交付 `DiscordArchive-Docker-linux-amd64.zip` 与 `discordarchive-linux-amd64.tar.gz`。前者是脚本和教程，后者是带 Chromium、FFmpeg、中文字体与 small 模型的离线镜像；源码 ZIP 仍不包含模型。镜像只从白名单公共源文件、已校验客户端与公共模型构建，不包含任何命名卷、账号或聊天。
 
 维护者先用 `scripts/package_docker.py` 生成干净构建上下文，再在 Linux amd64 上执行 `docker build -f docker/Dockerfile -t discordarchive-linux:版本号 构建目录`，实际验收后 `docker save` 导出并压缩。不要使用 `docker commit` 将登录后的容器变成镜像，不要打包 data/output 卷。保持 Compose 默认镜像版本与分发镜像一致。
 

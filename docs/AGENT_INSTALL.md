@@ -1,13 +1,13 @@
 # 交给 Agent 安装与验收
 
-适用于用户已授权你操作的 Mac 或 Ubuntu。先确认目标机器和目录；这是安装说明，不是授予额外权限。已有授权无需重复询问，缺少会改变目标或权限范围的信息才询问。
+适用于已获授权的 Mac / Ubuntu。确认目标机器、目录和已有服务；只为目标或权限缺口提问，不重复请求已有授权。
 
 ## 先识别环境与已有安装
 
 1. 读取项目 AGENTS.md、README、目标平台教程和用户约束。区分“Mac 本地运行”与“只访问 Ubuntu”；后者不安装完整项目或模型。
-2. 使用 `uname -s`、`uname -m`、`python3 --version`、`node --version` 和 `df -h .` 检查平台、架构、运行环境和空间。缺少命令不代表资料库为空。
-3. 检查目标目录是否已有 data/、output/ 和运行服务。存在时按 [保留资料更新](DELIVERY.md#已有安装如何更新)处理，不删除或清空，不用新空目录冒充原安装成功。只读诊断可用 `python3 scripts/desktop_launcher.py --root "$PWD" --check`（Mac）或 `python3 scripts/install_linux_service.py --status`（Ubuntu）。
-4. 分发文件见 [获取安装包](DOWNLOADS.md)。验证 CHECKSUMS.sha256，核对源码 ZIP 的 PACKAGE-MANIFEST.json，以及访问客户端平台。Mac 客户端仅 Apple Silicon arm64；Windows x64 尚待实机验收。
+2. 用 `uname -s`、`uname -m`、`df -h .` 检查平台与空间。原生版另查 Python / Node；Docker 查 Engine / Compose，无需在宿主机安装项目依赖。
+3. 检查原生 data/output、Docker 卷与已有服务。更新按 [保留资料](DELIVERY.md#已有安装如何更新)处理；隔离测试另设目录或卷，不覆盖原安装。Mac 用 launcher `--check`，原生 Ubuntu 用服务脚本 `--status`，Docker 用 `sudo docker compose ps` 查看状态。
+4. 按 [下载说明](DOWNLOADS.md)选择文件并核对对应哈希、源码清单和客户端架构。Mac 客户端为 arm64；Windows x64 待实机验收。
 
 ## Mac 本地安装
 
@@ -21,15 +21,15 @@ python3 scripts/desktop_launcher.py --root "$PWD" --no-open
 python3 scripts/desktop_launcher.py --root "$PWD" --check
 ```
 
-第一条限制安装器只准备项目依赖，不通过 Homebrew 安装系统组件。缺 Python/Node 时先确认用户已有的系统安装授权；若已授权，按 [Mac 教程](MAC.md)准备依赖后继续，不能以重复执行掩盖同一错误。`--no-open` 保持终端路径可验收；用户需要界面时去掉该参数或打开 --check 返回的实际 URL。
+`--no-system-install` 禁止安装系统组件。缺 Python/Node 时，在用户已有授权范围内按 [Mac 教程](MAC.md)准备。`--no-open` 不打开浏览器；需要界面时打开 `--check` 返回的实际 URL。
 
-**Mac 本地登录不依赖 helpers/login-assistant-mac.zip。** 有效的可选 Ubuntu 客户端包会被发布；缺少或发布失败不会阻止本地安装。只有访问 Ubuntu 时才需要对应客户端。不要为源码克隆安装额外强制下载助手包。
+**Mac 本地安装不依赖 helpers/login-assistant-mac.zip**，无需为克隆的源码另下 Ubuntu 助手。
 
 语音在需要时单独执行 `bash Install-Speech.command`；Intel Mac 的当前语音入口不支持，不能标记通过。不要删除旧模型或已有虚拟环境。
 
 ## Ubuntu Docker 首次部署（推荐）
 
-按 [Docker 教程](DOCKER.md)核对 Linux amd64、Docker Engine、Compose v2、磁盘空间和现有服务。取得部署 ZIP 与离线镜像，在新部署目录执行 `sudo bash Install-Docker.sh`，再执行 `sudo bash Configure-Tailscale.sh`；已有 Serve 路由先核对，不能覆盖其他工作台。模型在镜像内，无需在访问电脑装模型。
+按 [Docker 教程](DOCKER.md)检查 Linux amd64、Docker / Compose 与空间。部署 ZIP 和离线镜像放同一新目录，执行 `sudo bash Install-Docker.sh`，再执行 `sudo bash Configure-Tailscale.sh`。保留已有 Serve 路由；模型已在镜像内。
 
 隔离验收要设置不同 `COMPOSE_PROJECT_NAME` 和 `ARCHIVE_PORT`，不得挂载原 data/output 卷。复用凭证必须得到用户授权，私密数据仅传入新卷。检查实际出图、语音进入稿件、容器重启后资料仍在，以及停止/自动启动设置生效。不得挂载 Docker socket 或电源接口；Docker 版只能控制容器内应用，不控制 Ubuntu 关机/重启。
 
@@ -77,4 +77,4 @@ Windows 访问时按教程提供 Windows ZIP。接着配置用户自己的 Tails
 
 ## 失败后继续
 
-保留退出码与脱敏日志，先定位缺失依赖、端口、服务归属、网络或授权阶段，再修正并复验。网络下载失败可重跑原安装入口，不能删除 data/、output/、凭据或旧导出。浏览器启动或模型加载失败时继续保留已保存内容；禁止用关闭系统保护、公开端口或复制原库到测试环境来掩盖失败。
+保留退出码和脱敏日志，定位依赖、端口、服务归属、网络或授权问题，修正后复验。重试安装不清空资料、凭据或模型；不以关闭系统保护、开放公网或替换资料库解决失败。

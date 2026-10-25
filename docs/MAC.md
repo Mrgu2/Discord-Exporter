@@ -1,39 +1,36 @@
 # Mac 本地安装与登录
 
-先按 [获取安装包](DOWNLOADS.md#完整项目)取得完整源码 ZIP；不要把仅用于访问 Ubuntu 的 arm64 客户端当成本地安装包。Apple Silicon 与 Intel Mac 的基础安装使用同一源码包；Intel Mac 的语音安装限制见 [语音配置](USAGE.md#语音转写可选)。
+下载 [DiscordArchive-source.zip](DOWNLOADS.md#完整项目)。Apple Silicon 与 Intel Mac 的基础安装使用同一包；当前语音安装仅支持 Apple Silicon。
 
-从源码仓库克隆安装时，直接在固定、可写的仓库目录执行 `bash Install.command`，不要求存在 Ubuntu 助手包；本地运行与分发包使用同一安装入口。下面的解压步骤只针对收到 ZIP 的人。
+## 安装
 
-1. 解压收到的 `DiscordArchive-source.zip`，保留完整的 **DiscordArchive** 文件夹，放到固定、可写的位置，例如个人文件夹内的“应用程序”（`~/Applications/DiscordArchive`）。不要只拖出里面的 App，后续也不要在服务运行时移动文件夹。
-2. 双击文件夹里的 **Install.command**。它会打开终端窗口，检查并按需安装运行组件与浏览器。下载期间请保留窗口，等待完成。
-3. 看到“**安装检查通过**”，随后浏览器自动打开“**工作台**”，才算安装和启动成功。页面拿到配置前，“保存一次 / 生成稿件”会保持禁用；按页面连接、配置频道后再操作。终端里若提示“安装未完成”，先按下方[故障处理](TROUBLESHOOTING.md)处理。
+1. 解压 ZIP，把完整 **DiscordArchive** 文件夹放到固定、可写的位置，如 `~/Applications/DiscordArchive`。不要单独移动 App。
+2. 双击 **Install.command**，保留终端窗口，等待依赖和浏览器安装完成。
+3. 看到“**安装检查通过**”且工作台打开后，继续登录。失败时按 [常见问题](TROUBLESHOOTING.md)处理。
 
-若 macOS 阻止打开：先尝试双击，再到“系统设置 → 隐私与安全性”，按系统提示允许你信任的这份程序，之后重新打开。当前 App 没有 Developer ID 公证，不要关闭系统保护。
+macOS 阻止打开时，到“系统设置 → 隐私与安全性”允许这份可信程序，再重新打开。App 尚未公证，不要关闭系统保护。
 
 <details>
-<summary>提示缺少 Homebrew 时怎么安装</summary>
+<summary>缺少 Homebrew / 从源码安装</summary>
 
-若终端提示缺少 **Homebrew**，按以下步骤安装一次：
+缺少 Python 或 Node 且没有 Homebrew 时：
 
-1. 按 `⌘ Space`，搜索并打开“终端”。
-2. 打开 [Homebrew 官网](https://brew.sh/)，复制官网当前提供的安装命令，粘贴到终端并按回车。按终端提示确认；如果要求输入 Mac 登录密码，输入时可能不显示字符，输入完成后按回车。
-3. 等待安装结束。如果末尾显示“Next steps”，执行其中添加 Homebrew 到环境的命令；请使用终端实际给出的命令，不要照抄别人的安装路径。参见 [Homebrew 官方安装说明](https://docs.brew.sh/Installation)。
-4. 新开一个终端窗口，输入 `brew --version` 并按回车。出现 Homebrew 版本号后，重新双击 **Install.command**。若提示找不到命令，先回看上一步的环境配置。
+1. 打开“终端”，按 [Homebrew 官网](https://brew.sh/)安装。
+2. 执行安装末尾“Next steps”给出的环境配置命令。
+3. 新开终端，确认 `brew --version` 可用，再双击 **Install.command**。输入系统密码时可能不显示字符。
 
-若官网提示当前系统不受支持，或安装出现错误，保留具体错误文字再求助，不要反复尝试不明来源的修复命令。
+从 Git 仓库安装：在固定、可写的仓库目录执行 `bash Install.command`，无需 Ubuntu 助手包。已有服务运行时不要移动项目目录。
 
 </details>
 
 ## 登录 Discord
 
-1. 双击 **Start.command** 或项目 App，打开工作台（默认 `http://127.0.0.1:8765`；端口占用时自动换用其他端口，以启动提示为准），点击 **连接 Discord**。
-2. 在本机打开的专用登录窗口中本人登录或扫码；密码、验证码和登录确认由本人完成。**Mac 本地不需要下载连接包、安装扩展或绑定 Ubuntu。**
-3. 等工作台进入 **添加频道与答疑人**，再关闭登录窗口，继续 [首次出稿](USAGE.md#第一次采集出图)。需要语音时按 [语音配置](USAGE.md#语音转写可选)安装。
+1. 在工作台点击 **连接 Discord**。
+2. 在专用登录窗口本人登录或扫码，完成验证码；Mac 本地无需扩展。
+3. 工作台显示 **添加频道与答疑人** 后，关闭登录窗口，按 [首次采集出图](USAGE.md#第一次采集出图)继续。
 
-Mac 本地直接使用安装器准备的登录浏览器，原有有效连接不必重登。若 Discord 要求验证码，由本人在登录窗口处理；退出后的登录和验证码需由使用者实际确认，不承诺平台验证一定通过。不要为此删除原资料。日常已有登录不等于本项目专用窗口已连接。
+已有有效连接不必重登。日常浏览器已登录，不等于本项目的专用窗口已连接；验证码失败时保留原资料，按 [登录排错](TROUBLESHOOTING.md)处理。
 
-只使用 Ubuntu 的人请看 [Ubuntu 部署](LINUX_SETUP.md)，不需要在 Mac 安装完整项目。
+以后双击 **Start.command** 或 **Discord Archive.app**。默认端口 8765，被占用时自动换用空闲端口，以启动提示为准。
 
-## 配置定时图片推送（可选）
-
-先按 [首次使用](USAGE.md#第一次采集出图)完成一份真实稿件与 PNG，再按 [图片推送教程](DELIVERY.md)配置邮箱、Telegram、Discord 或微信 ClawBot。四个渠道默认关闭；测试收到附件后，再启用渠道和定时出稿，并确认自动任务未暂停。
+按需配置：[语音转写](USAGE.md#语音转写可选) · [定时推送](DELIVERY.md) · [自动启动](OPERATIONS.md#自动启动可选)。只访问已有 Ubuntu 时，按 [访问教程](ACCESS.md)操作。

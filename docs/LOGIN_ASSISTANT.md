@@ -1,49 +1,58 @@
 # 首次连接与访问客户端
 
+Mac 本地使用 [登录窗口](MAC.md#登录-discord)。本页用于 Ubuntu 首次连接；服务器已连接时，直接按 [日常访问](ACCESS.md)操作。
+
+## 首次连接 Discord
+
+在访问电脑操作，只做一次。需要 Chrome 或 Edge、Tailscale，以及能正常登录 Discord 的日常浏览器。
+
+1. 完整解压对应 [访问客户端](DOWNLOADS.md)。用 **Ubuntu Workspace.app / Ubuntu Workspace.exe** 打开工作台；没有预填地址时，输入部署时得到的 HTTPS 地址。系统代理有冲突时使用此专用窗口。
+2. 可从工作台下载带服务器地址的首次连接包。Mac 打开包内 **首次连接 Discord.app**，Windows 打开 **Connect Discord.cmd**，安装当前用户的连接组件。
+3. 在 Chrome 打开 `chrome://extensions/`（Edge 用 `edge://extensions/`），开启 **开发者模式 → 加载已解压的扩展**，选择包内 **Browser Extension**。扩展未上架，此步需手动完成；更新同目录扩展时点刷新。
+4. 在日常浏览器本人登录 [Discord](https://discord.com/channels/@me)，停在 Discord 标签页，点扩展图标，再点 **识别当前 Discord 账号**。标签页刷新并识别后，核对账号和服务器，点 **确认连接此账号**。
+5. 看到 **连接成功**，且 Ubuntu 工作台显示账号后，按 [首次采集出图](USAGE.md#第一次采集出图)验证一个小频道。自动任务保持暂停，按需恢复。
+
+完成后可关闭客户端或移除扩展，Ubuntu 独立运行。换电脑访问不重复绑定；连接过期时再执行本节。
+
+密码和验证码只在 Discord 页面输入。浏览器本身无法登录时，先处理登录问题；工具不绕过人机验证。这是本人确认的连接迁移，**不是 Discord 官方 OAuth**。取消、超时、验证失败或服务器已有另一账号时，不直接覆盖原连接。
+
+<details>
+<summary>连接权限与保存位置</summary>
+
+扩展 v0.4 仅在主动识别后，短时观察所选 Discord 标签页的指定同站 GET 请求；不读取网页存储、聊天正文或其他网站。识别后停止观察，待本人确认后经 Native Messaging 和 Tailscale HTTPS 提交。
+
+扩展不持久保存连接，取消或超时即清空。服务器再次验证账号，凭据文件权限为 `0600`；Mac 本地登录使用系统钥匙串。扩展不关闭代理、不跳过证书检查。
+
+客户端只保存公开地址。日常地址在 `server.json`，一次性连接目标在 `binding.json`，互不覆盖。只有首次连接工具注册当前用户的本机组件，日常访问入口不注册。
+
+</details>
+
 ## 新电脑访问已有 Ubuntu
 
-日常只需要：登录同一个 Tailscale 账号 → 双击访问客户端 → 进入工作台。服务器已有的 Discord 连接、资料和模型继续使用，换电脑不重新授权 Discord，不安装扩展、不做网页配对。
-
-当前原生客户端约 3 MB，使用 Go 标准库，不需要完整项目、Python、Node、Playwright 或语音模型。客户端用 Chrome / Edge 的独立临时工作台窗口直连私网，不修改系统代理。普通浏览器也可访问固定 HTTPS 地址；TUN / 企业强制代理等环境尚需分别验收。
-
-客户端先使用包内或已保存的公开地址。无地址时，只在本机 Tailscale 状态中寻找在线、名称以 `discordarchive` 开头的候选节点，并验证 HTTPS 与本人管理员权限；只有找到唯一工作台时自动选择，不扫描其他设备。找不到唯一结果时，才提示输入一次服务器 HTTPS 地址。
-
-地址不是写死的。Mac 用包内“设置工作台.app”，Windows 用“设置工作台.cmd”修改。只保存公开地址，不保存 Discord 凭证。默认启动不注册 Native Messaging 组件，也不要求浏览器权限。
-
-## Mac 本地直登，Ubuntu 使用扩展绑定
-
-Mac 本地直接点击“连接 Discord”并在本机窗口登录，不需要扩展；见 [Mac 登录](MAC.md#登录-discord)。Ubuntu 见 [Linux 首次连接](LINUX_SETUP.md#连接-discord)。新服务器没有账号时，下载服务器专用客户端，运行包内首次连接工具并加载一次 Browser Extension；在日常 Discord 标签页点扩展，识别账号、核对目标后确认。成功后 Ubuntu 保存连接并独立运行；换电脑访问不重复绑定。
-
-v0.4 扩展只在主动识别后短时观察所选 Discord 标签页的指定 API 请求；只接收同站发起的 GET 请求，不读取网页存储或其他网站、聊天正文。识别到候选后立即停止观察，经本人确认才通过 Native Messaging 和本人 Tailscale HTTPS 提交。扩展不持久化连接；取消和超时清空待提交状态。服务器再次校验账号并以 0600 保存，自动任务保持暂停。
-
-扩展只有 discord.com 站点权限；不需要关闭代理。Ubuntu HTTPS 传输由本机组件直连，正常校验证书，不修改系统代理。旧的 Mac 本地绑定接口仅保留兼容，不作为登录入口；Mac 本地仍在登录窗口直接登录，并使用系统钥匙串。默认打开访问客户端不注册组件；仅首次连接工具才安装当前用户的组件。服务器下载包的公开地址用于首次连接，避免旧的访问地址把新服务器绑定到错误位置；日常访问仍优先使用用户设置。一次性连接目标单独保存在本机 `binding.json`，日常地址保存在 `server.json`；连接 Mac 不会改掉日常 Ubuntu 访问地址。
-
-这是 Ubuntu 的账号连接迁移，不是官方 OAuth。旧版读取网页存储固定字段的扩展已退出使用；v0.4 流程已在空 Ubuntu 资料库实测。Mac 本地直接登录不需要扩展，验证码由本人处理；没有把历史 Mac 扩展测试当作本地直登的新实测。当前扩展未上架，Ubuntu 首次加载仍需本人操作。结果与限制见 [当前验证记录](FINAL_PACKAGE_ACCEPTANCE.md)。
+按 [访问教程](ACCESS.md)登录 Tailscale 并打开工作台，无需项目、模型或扩展。客户端约 3 MB，使用已安装的 Chrome / Edge；TUN 和企业强制代理需单独诊断。
 
 ## 开发者构建访问客户端
 
-在有 Go 与 macOS 构建工具的开发机执行；用户机器不需要 Go：
+开发机需 Go；Mac 打包另需 macOS 构建工具。用户机器无需 Go：
 
 ```sh
 python3 scripts/package_native_client.py --platform darwin-arm64 --destination dist/access-mac-new --with-first-login
 python3 scripts/package_native_client.py --platform win32-x64 --destination dist/access-windows-new --with-first-login
 ```
 
-输出目录须是新的，已有版本保留。Mac 仅本地签名，尚无 Developer ID 公证。Windows x64 可交叉编译、核对 PE 和文件哈希，但尚未完成 Windows 实机验证；Intel Mac 同样未实机验收。
-
-面向新部署的包使用 `--with-first-login`，附带一次性扩展和首次连接入口。省略该参数只生成日常访问客户端；旧参数 `--with-experimental-binding` 作为兼容别名保留。
+输出目录必须是新的。`--with-first-login` 包含首次连接工具；省略时仅生成访问客户端，旧参数 `--with-experimental-binding` 仍兼容。Mac 包仅支持 Apple Silicon，尚未公证；Windows x64 尚待实机验收。
 
 ## 发布访问客户端
 
-将可信 ZIP 上传到 Ubuntu，在项目目录执行：
+Docker 镜像已内置两种客户端。以下命令用于**原生 Ubuntu**，在项目目录发布可信 ZIP：
 
 ```sh
 python3 scripts/install_login_assistants.py --mac-zip /路径/login-assistant-mac.zip --windows-zip /路径/login-assistant-windows.zip
 ```
 
-入口文件名保持旧名以兼容已有下载链接，但内容是访问客户端。先核对平台、首次连接组件、连接协议版本 2、精确清单和 SHA-256，再原子发布到 `.local/login-assistants/`；替换旧包时先备份。只对管理员下载开放。
+发布器核对平台、首次连接组件、协议版本 2、文件清单与 SHA-256，再原子写入 `.local/login-assistants/`；替换前保留备份。下载仅对管理员开放，专用包附加 HTTPS 地址，不改 App 签名或加入账号。
 
-服务器专用下载包在 App 外附加仅含当前 HTTPS 地址的 `server.json`，不改动 App 签名、不加入账号信息。首次收到包时完整解压；地址保存后可按自己习惯放置客户端。设置工具与主 App 应保持同目录。
+完整源码包的助手内嵌规则见 [打包说明](PACKAGING.md)。Mac 本地安装不强制依赖该助手包。
 
 ## 验证
 
@@ -54,6 +63,4 @@ node tests/first_login_extension_check.mjs
 node tests/first_login_network_check.mjs
 ```
 
-原生测试使用虚构凭证与回环测试服务，覆盖地址限制、本人身份、绑定端点的输入验证与消息协议；不读取真实浏览器会话。访问客户端的 `--check` 是只读的私网检查，不安装组件或传递账号。实际结果与未完成项见 [私网访问验收](REMOTE_ACCESS_ACCEPTANCE.md)。
-
-完整 Mac 源码包由构建器使用 `--mac-helper /路径/login-assistant-mac.zip` 内嵌已验证的连接包；安装器自动发布。未显式传参时只复用源码包内的 `helpers/login-assistant-mac.zip` 或当前安装已发布的包，二者都缺时停止构建，不生成缺首登工具的发布版本。源码开发者先构建对应连接包；使用者无需 Go。
+测试使用虚构凭据和回环服务，覆盖地址、身份与连接协议；不读取真实浏览器会话。客户端 `--check` 只检查私网连接，不注册组件或提交账号。实机与模拟测试须分别记录，见 [首次连接验证](FIRST_LOGIN_ACCEPTANCE.md)。

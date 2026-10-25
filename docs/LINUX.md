@@ -2,48 +2,30 @@
 
 Linux 与 Mac 共用工作台、采集、原文归档、稿件、长图、定时出稿和语音转写流程。已实测 Ubuntu 22.04 x86_64；其他发行版与 ARM64 尚未实机验收。Linux 语音使用 faster-whisper，Mac 保留 MLX；相同模型级别也不保证识别结果逐字相同。
 
+按需查看：[语音与 GPU](#3-语音转写默认-small--cpu) · [原生服务日志](#5-日常管理与验收) · [旧版 SSH / VNC](#2-备用ssh-绑定与登录桌面)。
+
 ## 已经部署：以后怎么打开
 
-不必重装或手工建隧道。使用代理时先打开随包提供的访问客户端，不以普通浏览器能先打开 HTTPS 为下载客户端的前提。客户端 Tailscale 在线后，也可打开部署时输出的固定 `https://主机.私网.ts.net` 地址；使用代理时，双击访问客户端，专用窗口直接访问私网；默认不处理 Discord 登录。客户端不运行采集或模型，关闭客户端不影响服务器任务。
+Tailscale 在线后打开部署时保存的 HTTPS 地址；代理冲突时用 [访问客户端](ACCESS.md)。日常无需隧道，也不重复绑定。
 
-默认步骤见 [README Linux 部署](LINUX_SETUP.md)。Ubuntu 只装一份完整项目；新电脑只需同一 Tailscale 身份和访问客户端，不重新绑定服务器已保存的账号。首次新服务器按 [Ubuntu 首次部署](LINUX_SETUP.md) 做一次日常浏览器连接；已有连接时跳过。
-
-Tailscale Serve 提供私网 HTTPS，代理到服务器 `127.0.0.1:8765`。服务端只信任回环来源、配置的准确域名、HTTPS 转发标记，以及指定所有者的 Tailscale 身份头；其他身份不获得管理权限。[Serve 官方说明](https://tailscale.com/docs/features/tailscale-serve)
-
-不做公网端口映射，不启用 Tailscale Funnel。服务器局域网 / Tailscale IP 用于 SSH 维护，不是让用户直接打开 `IP:8765` 的入口。服务器地址变化可用 `ip -4 address`、`tailscale ip -4` 核对；固定域名以 `tailscale status` 与部署输出为准。
-
-旧版 `http://127.0.0.1:18765` 是客户端建立 SSH 隧道后的备用入口，6080 是手工启用 VNC 的备用桌面。它们不属于新默认流程；具体见第 2 节。原有数据和连接不因启用 HTTPS 迁移或删除。
+新部署推荐 [Docker](DOCKER.md)；本页的安装、systemd、VNC 与电源命令仅用于原生版。Docker 不使用这些命令。
 
 ## 首次部署前
 
-以下安装命令都在 **Ubuntu 服务器的 SSH 终端**执行，助手和访问操作在 **你自己的 Mac / Windows**进行。需要普通用户、可用的 sudo 权限、Python 3.10+、联网下载依赖的能力，以及约数 GiB 的可用磁盘空间；实际聊天和附件会继续占用磁盘。先用 `df -h /` 检查系统盘。
-
-先从可信来源取得完整源码（或解压 `DiscordArchive-source.zip`），通过 SSH/SFTP 上传到服务器的固定目录。目录中应能看到 `app.py`、`scripts/`、`web/`、`package-lock.json`；不要只上传 Mac App，也不要上传自己的 SSH 配置或已有聊天数据。从 ZIP 首次上传与解压的完整命令见 [README Linux 部署](LINUX_SETUP.md)。下面示例统一使用 `~/apps/DiscordArchive`；已有安装继续用原目录，不另建实例。
+原生安装需普通 SSH 账号、sudo、Python 3.10+ 与可用磁盘空间。上传、依赖、服务和 Tailscale 的完整步骤见 [原生安装教程](LINUX_SETUP.md)。已有安装继续使用原目录。
 
 ## 1. 默认部署：Tailscale HTTPS 与独立助手
 
-把源码放到固定、可写的用户目录，例如 `~/apps/DiscordArchive`。不要复制其他电脑的 `.runtime`、`node_modules` 或 `.venv`。安装过程需要联网。
+原生安装按 [Ubuntu 教程](LINUX_SETUP.md)执行；环境复查可在项目目录运行 `bash scripts/install_linux.sh --check`。访问电脑仅需 Tailscale 与客户端，不安装项目或模型。
 
-```sh
-cd ~/apps/DiscordArchive
-bash scripts/install_linux.sh --with-system-deps
-```
-
-需要 Python 3.10+ 和 sudo 权限。安装入口优先使用已有 Node.js 20+；缺少时从 Node 官方站下载 Node 22，并核对 SHA-256，仅安装到项目的 `.runtime`。npm 和 Playwright 使用项目锁定版本。`--with-system-deps` 另安装 Chromium 系统依赖、中文字体、FFmpeg 和 Python venv，不替换系统 Python。
-
-看到“Linux 环境检查通过”才算完成。重新检查：
-
-```sh
-bash scripts/install_linux.sh --check
-```
-
-基础部署顺序为：基础环境 → 用户后台服务 / linger → small 语音（按需）→ Tailscale 授权 → `configure_tailscale.py` 配置所有者 → Serve 私网 HTTPS → 发布访问客户端。首次账号连接使用包内首次连接工具和日常浏览器扩展；空资料库首次连接已实测。逐条命令与成功标志见 [README](LINUX_SETUP.md)。访问已有服务器的 Mac / Windows 不需要执行本项目安装器。
-
-助手构建、发布、代理处理和 Windows 的验证边界见 [独立助手说明](LOGIN_ASSISTANT.md)。新安装默认不自启动，由工作台设置选择；升级现有安装保留原服务偏好，切勿另建第二份资料库。
+Tailscale Serve 转发到本机实际端口。只接受配置的域名、HTTPS 与所有者身份，不启用 Funnel。IP 用于 SSH 维护，不直接访问 `IP:8765`。旧隧道 18765 与 VNC 6080 仅用于下节备用流程。
 
 ## 2. 备用：SSH 绑定与登录桌面
 
-本节仅保留旧版维护 / 回退路线，会要求 Mac 也安装完整项目；访问已有服务器优先使用第 1 节客户端；新账号优先按 [Ubuntu 首次部署](LINUX_SETUP.md) 的首次连接流程处理。旧路线同样不需要显示器、DISPLAY、Xvfb 或 VNC。先在 Mac 完整项目中登录，再经核对身份的 SSH 绑定。 绑定后，Ubuntu 自己连接 Discord、保存附件、转写和出图；关闭 Mac 或 SSH 隧道不影响服务器已提交的任务和已开启的自动计划。
+以下为原生版旧流程，需要 Mac 安装完整项目。新部署用 [首次连接工具](LOGIN_ASSISTANT.md#首次连接-discord)；只有排错或回退时才使用本节。SSH 绑定不需要 VNC，成功后 Ubuntu 独立运行。
+
+<details>
+<summary>展开 SSH 绑定与 VNC 备用步骤（仅原生版）</summary>
 
 ### 在 Ubuntu 安装后台服务
 
@@ -114,9 +96,11 @@ python3 scripts/install_linux_service.py --install
 
 以上保留账号连接与自启动偏好，不删除资料。Linux 的“自动另存目录”填写**服务器上的绝对路径**；下载图片保存在当前浏览器的下载目录。
 
+</details>
+
 ## 3. 语音转写：默认 small / CPU
 
-先完成基础安装，再运行：
+以下安装命令用于**原生 Linux**。Docker 已含 small，GPU 需构建专用镜像后另测。原生版完成基础安装后运行：
 
 ```sh
 python3 scripts/install_speech.py
@@ -181,12 +165,12 @@ PATH="$PWD/.runtime/node/bin:$PATH" python3 scripts/verify_speech.py /绝对路�
 
 | 现象 | 下一步 |
 | --- | --- |
-| 私有 IP 能看到，但浏览器打不开服务器 IP:8765 | 默认只监听回环地址；按第 2 节建立 SSH 隧道，打开本机 18765 |
+| 浏览器打不开服务器 IP:8765 | 使用部署时的 HTTPS 域名；默认仅监听回环地址，旧隧道仅作备用 |
 | 在外面 SSH 连不上 | 先确认两端 Tailscale 在线、地址正确、访问策略允许 SSH；不要改为开放公网端口 |
 | 本机 18765 显示连接被拒绝 | 检查隧道终端是否还开着；重新建立隧道。仍失败时在服务器检查服务状态 |
 | SSH 提示绑定端口失败 | 检查是否已有同用途隧道；命令应停止而不是继续让用户打开错误页面 |
 | 工作台能打开，但 Discord 登录窗口看不到 | 已有连接无需重新登录；首次授权见账号配置边界，备用模式检查 6080 隧道与桌面服务 |
-| 服务器重启后打不开 | 先确认服务器已上线，再检查用户 linger 和归档服务；备用模式另查桌面服务；重新建立本机隧道 |
+| 服务器重启后打不开 | 确认 Tailscale 在线，按 [日常管理](OPERATIONS.md#以后如何打开)检查对应的 Docker 或原生服务 |
 
 ## 5. 日常管理与验收
 
@@ -213,6 +197,8 @@ PATH="$PWD/.runtime/node/bin:$PATH" python3 scripts/verify_workflow.py
 ```
 
 换机前先停止服务，再复制完整 `data/`、`output/`；不要复制正在写入的单个 SQLite 文件，也不要让两台机器写同一数据库。语音环境与模型在新机器重新安装。
+
+<a id="6-服务器电源"></a>
 
 ## 6. 服务器电源（仅原生版）
 

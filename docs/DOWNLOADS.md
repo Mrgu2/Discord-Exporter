@@ -1,46 +1,43 @@
 # 获取安装包
 
-当前交付版本：**v2026.10.25.2（预览版）**。
+当前版本：**v2026.10.25.2（预览版）**。[打开 Release](https://github.com/Mrgu2/Discord-Exporter/releases/tag/v2026.10.25.2)，在 **Assets** 中下载。私有仓库需有权限的 GitHub 账号；无权限可能返回 404。
 
-## 从哪里取得
+| 用途 | 文件 | 教程 |
+| --- | --- | --- |
+| Mac 本地完整安装 | [DiscordArchive-source.zip](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.2/DiscordArchive-source.zip) | [Mac](MAC.md) |
+| Ubuntu Docker（x86_64） | [部署 ZIP](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.2/DiscordArchive-Docker-linux-amd64.zip) + [离线镜像，含 small](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.2/discordarchive-linux-amd64.tar.gz) | [Docker](DOCKER.md) |
+| Mac 访问 Ubuntu | [login-assistant-mac.zip](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.2/login-assistant-mac.zip)（仅 M 系列 / arm64） | [访问](ACCESS.md) |
+| Windows 访问 Ubuntu | [login-assistant-windows.zip](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.2/login-assistant-windows.zip)（x64，待实机验收） | [访问](ACCESS.md) |
 
-打开 [GitHub Releases](https://github.com/Mrgu2/Discord-Exporter/releases/tag/v2026.10.25.2)，在 **Assets** 中选择对应 ZIP。仓库目前为私有，需要登录拥有访问权限的 GitHub 账号；无权限时下载链接可能显示 404。
-
-| 用途 | 下载 |
-| --- | --- |
-| Mac 本地完整安装 / Ubuntu 原生替代方案 | [DiscordArchive-source.zip](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.2/DiscordArchive-source.zip) |
-| Ubuntu Docker 部署（x86_64） | [部署包](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.2/DiscordArchive-Docker-linux-amd64.zip) + [含 small 的离线镜像](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.2/discordarchive-linux-amd64.tar.gz)，见 [Docker 教程](DOCKER.md) |
-| Apple Silicon Mac 访问 Ubuntu | [login-assistant-mac.zip](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.2/login-assistant-mac.zip) |
-| Windows x64 访问 Ubuntu | [login-assistant-windows.zip](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.2/login-assistant-windows.zip) |
-| 校验分发文件 | [CHECKSUMS.sha256](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.2/CHECKSUMS.sha256) |
-
-不要将 GitHub 自动生成的 **Source code (zip)** 当作 `DiscordArchive-source.zip`：自动源码快照没有构建好的原生入口和内嵌客户端。需要本地重新构建时，见 [打包说明](PACKAGING.md)。本版构建产物位于项目的 `dist/releases/v2026.10.25.2/`，这一路径仅供维护者使用。
-
-**如果已解压源码 ZIP，并能看到 Install.command、app.py 和 docs/，你已经拿到完整项目，无需再次下载源码包。** 直接进入 [Mac 安装](MAC.md) 或 [Ubuntu 安装](LINUX_SETUP.md)。
+**不要选 GitHub 自动生成的 Source code (zip)**：它没有构建好的 App 和内嵌客户端。仅访问 Ubuntu 的电脑不用安装完整项目或模型。
 
 ## 完整项目
 
-文件：`DiscordArchive-source.zip`。用于 Mac 本地运行或 Ubuntu 服务端部署，解压后得到 `DiscordArchive/` 文件夹；依赖在安装时准备，不包含私人消息、凭据或模型。Ubuntu 的 Mac 首次连接包同时内嵌于源码包 `helpers/` 中。
+`DiscordArchive-source.zip` 解压得到 **DiscordArchive/**，Mac 依赖在安装时准备。Ubuntu 原生替代安装也使用此包，见 [原生教程](LINUX_SETUP.md)。包内没有私人资料或模型，`helpers/` 内含 Mac 首次连接包。
+
+已看到 `Install.command`、`app.py` 和 `docs/` 时，无需再次下载源码包。
 
 ## Mac 访问客户端
 
-文件：`login-assistant-mac.zip`。当前架构为 **darwin-arm64，只适用于 Apple Silicon（M1 / M2 / M3 / M4 等 M 系列）**；不是 Intel Mac（x86_64）客户端。可在“苹果菜单 → 关于本机”查看芯片；Intel 用户不要误装该包。
-
-这是访问 Ubuntu 的客户端和首次连接工具，不需要在 Mac 安装完整项目或模型。使用见 [访问已有 Ubuntu](ACCESS.md)，首次连接见 [Ubuntu 教程](LINUX_SETUP.md#连接-discord)。Mac 本地运行完整项目不使用这个客户端包。
+`login-assistant-mac.zip` 适用于 **Apple Silicon（M 系列 / arm64）**，不适用于 Intel。它用于 Ubuntu 首次连接和日常访问，Mac 本地完整版不需要此包。App 尚未公证，仅对核对过的可信包按系统提示允许打开。
 
 ## Windows 访问客户端
 
-文件：`login-assistant-windows.zip`，架构 **Windows x64**。已构建并校验组件，尚未完成 Windows 实机验收；不要把它当成已验证的 Windows ARM 原生包。
+`login-assistant-windows.zip` 适用于 **Windows x64**，尚待 Windows 实机验收；不是 Windows 本地完整版或 ARM 客户端。
 
 ## 核对文件
 
-分发目录还包含 `FILES.txt` 和 `CHECKSUMS.sha256`。先根据 FILES.txt 选择文件，再在该目录执行：
+下载 [CHECKSUMS.sha256](https://github.com/Mrgu2/Discord-Exporter/releases/download/v2026.10.25.2/CHECKSUMS.sha256)，对照所选文件的 SHA-256：
 
 ```sh
-# Mac
-shasum -a 256 -c CHECKSUMS.sha256
+# Mac；文件名换成自己下载的文件
+shasum -a 256 DiscordArchive-source.zip
 # Ubuntu
-sha256sum -c CHECKSUMS.sha256
+sha256sum DiscordArchive-Docker-linux-amd64.zip
 ```
 
-Windows PowerShell 可分别执行 `Get-FileHash .\DiscordArchive-source.zip -Algorithm SHA256`（客户端文件同理），对照 CHECKSUMS.sha256 的对应行。未通过校验时重新取得文件，不覆盖已有资料。
+Windows PowerShell：`Get-FileHash .\login-assistant-windows.zip -Algorithm SHA256`。
+
+只有下载了清单内全部文件，才用 `shasum -a 256 -c CHECKSUMS.sha256` 或 `sha256sum -c CHECKSUMS.sha256` 批量检查；否则会提示其他文件缺失。Docker 部署 ZIP 内另有仅核对镜像的校验文件，供安装器使用。校验不一致时重新下载。
+
+维护者构建说明见 [打包](PACKAGING.md)。

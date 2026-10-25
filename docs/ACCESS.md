@@ -1,21 +1,28 @@
-# 访问已经部署好的 Ubuntu
+# 访问已有 Ubuntu
 
-服务器已连接 Discord 时，换电脑不用重新绑定，也不需要安装完整项目。
+服务器已连接 Discord 后，换电脑无需重绑，也不用安装项目或语音模型。
 
-先按 [获取安装包](DOWNLOADS.md)准备文件：Apple Silicon（M 系列，arm64）Mac 用 `login-assistant-mac.zip`；该客户端不适用于 Intel Mac。Windows x64 用 `login-assistant-windows.zip`（尚待实机验收）。
+1. 在访问电脑安装 Tailscale，登录服务器获准的账号。
+2. 在浏览器打开部署时保存的 HTTPS 工作台地址。
+3. 若系统代理阻断访问，改用下面的访问客户端。
 
-1. 在新电脑安装并登录自己的 Tailscale，使用服务器获准的同一身份。
-2. 完整解压对应访问客户端，Mac 双击 **Ubuntu Workspace.app**，Windows 双击 **Ubuntu Workspace.exe**。需要已安装 Chrome 或 Edge。
-3. 客户端直接打开私网工作台，不弹配对页或 Discord 登录页。同私网中名称以 `discordarchive` 开头且属于本人管理的工作台可自动发现；只有找不到唯一服务器时才提示输入一次 HTTPS 地址。
+## 使用访问客户端
 
-**地址可以修改：**Mac 打开包内 **设置工作台.app**，Windows 打开 **设置工作台.cmd**，填写服务器实际 HTTPS 地址并保存。服务器专用下载包已预填地址。客户端只记住这个公开地址，不保存 Discord 登录连接，也不注册浏览器桥接组件。
+| 电脑 | 文件 | 打开入口 |
+| --- | --- | --- |
+| Apple Silicon Mac（M 系列 / arm64） | `login-assistant-mac.zip` | **Ubuntu Workspace.app** |
+| Windows x64 | `login-assistant-windows.zip` | **Ubuntu Workspace.exe** |
 
-工作台地址也可收藏在普通浏览器；系统代理有冲突时用轻客户端的专用直连窗口，不修改全局代理。约 3 MB 的客户端不需要项目运行环境或模型。当前 Mac 包为 Apple Silicon，Windows x64 尚待实机验收；Mac 仅本地签名，未 Developer ID 公证，首次只对可信包按系统提示允许打开。
+文件见 [下载说明](DOWNLOADS.md)。完整解压，并安装 Chrome 或 Edge。Mac 包不适用于 Intel；Windows 包尚待实机验收，Mac App 尚未公证。
 
-需要恢复已停止的服务器服务，见 [日常管理](OPERATIONS.md#以后如何打开)。
+客户端使用专用窗口直连私网，不改全局代理。服务器专用包已填地址；否则尝试发现本人名下唯一的 `discordarchive` 工作台，找不到时输入一次 HTTPS 地址。
+
+修改地址：Mac 打开 **设置工作台.app**，Windows 打开 **设置工作台.cmd**。这些入口应与主 App 保持同目录。客户端只保存地址，不保存 Discord 凭据；关闭窗口不影响服务器任务。TUN 或企业强制代理需另行诊断。
+
+服务器服务已停止时，按 [启动方法](OPERATIONS.md#以后如何打开)恢复；首次账号连接见 [首次连接 Discord](LOGIN_ASSISTANT.md#首次连接-discord)。
 
 ## 手机访问与 Tailscale IP
 
-手机安装 Tailscale，登录获准的账号并保持连接，然后在浏览器打开 Ubuntu 的 HTTPS 工作台地址，无需安装项目或模型。Ubuntu 默认只监听本机，请使用 HTTPS 域名；Tailscale IP 可以用于 SSH，但直接打开 `http://100.x.x.x:8765` 不适用于该部署。
+手机安装 Tailscale，登录获准的账号，再用浏览器打开 Ubuntu 的 HTTPS 地址。Ubuntu 默认只监听本机，不能直接用 `http://100.x.x.x:8765` 访问；Tailscale IP 可用于 SSH 维护。
 
-如果项目运行在 Mac，且开启局域网监听，手机连接同一 Tailscale 私网后，也可以打开 `http://Mac的Tailscale-IP:实际端口`。IP 可在 Tailscale 设备列表查看，端口以工作台启动提示为准；首次访问按页面完成配对，不开放公网端口。
+项目在 Mac 上运行且开启局域网监听时，手机也可打开 `http://Mac的Tailscale-IP:实际端口`，按页面完成配对。IP 在 Tailscale 设备列表查看，端口以启动提示为准。不开放公网端口。

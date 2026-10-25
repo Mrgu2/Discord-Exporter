@@ -254,3 +254,12 @@ sudo docker compose cp app:/app/output/. /备份目录/output
 本次配置预览包使用 v2026.10.25.3 镜像，包含容器停止竞态修复；Linux、Windows 预览入口与测试边界见 [配置包验收](DOCKER_CONFIG_ACCEPTANCE.md)。
 
 </details>
+
+## 下一步
+
+安装器显示“应用已就绪”后，继续配置私网访问：
+
+- **[Ubuntu 下一步：Tailscale HTTPS](DOCKER.md#3-设置私网访问只做一次)**。
+- **[Windows 下一步：Tailscale HTTPS](WINDOWS_DOCKER.md#4-tailscale-https首次连接与远程访问)**。
+
+已通过 HTTPS 打开工作台时，直接 [连接 Discord](LOGIN_ASSISTANT.md#首次连接-discord)；已连接账号时，进入 [首次出图](USAGE.md#第一次采集出图)。

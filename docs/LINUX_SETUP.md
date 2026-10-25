@@ -95,3 +95,7 @@ python3 scripts/configure_tailscale.py
 ## 配置定时图片推送（可选）
 
 先完成手动出图，再按 [推送教程](DELIVERY.md)配置。用 Ubuntu 出图，就在 Ubuntu 工作台设置收件渠道并测试；Mac 的配置不会同步到服务器。
+
+## 下一步
+
+HTTPS 工作台已能打开时，点击 **[下一步：连接 Discord](LOGIN_ASSISTANT.md#首次连接-discord)**。已连接账号时，直接进入 [首次采集出图](USAGE.md#第一次采集出图)。

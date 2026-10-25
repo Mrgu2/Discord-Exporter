@@ -26,3 +26,10 @@
 手机安装 Tailscale，登录获准的账号，再用浏览器打开 Ubuntu 的 HTTPS 地址。Ubuntu 默认只监听本机，不能直接用 `http://100.x.x.x:8765` 访问；Tailscale IP 可用于 SSH 维护。
 
 项目在 Mac 上运行且开启局域网监听时，手机也可打开 `http://Mac的Tailscale-IP:实际端口`，按页面完成配对。IP 在 Tailscale 设备列表查看，端口以启动提示为准。不开放公网端口。
+
+## 下一步
+
+- 工作台已显示正确账号：**[下一步：采集并生成图片](USAGE.md#第一次采集出图)**。
+- 工作台提示尚未连接 Discord：**[先完成首次连接](LOGIN_ASSISTANT.md#首次连接-discord)**。
+
+以后如何打开、启动和停止，见 [日常使用](OPERATIONS.md#以后如何打开)。

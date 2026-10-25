@@ -1,5 +1,7 @@
 # Mac 本地安装与登录
 
+流程：**安装与登录 → [首次出图](USAGE.md#第一次采集出图) → [日常使用](OPERATIONS.md)**。
+
 下载 [DiscordArchive-source.zip](DOWNLOADS.md#完整项目)。Apple Silicon 与 Intel Mac 的基础安装使用同一包；当前语音安装仅支持 Apple Silicon。
 
 ## 安装
@@ -34,3 +36,7 @@ macOS 阻止打开时，到“系统设置 → 隐私与安全性”允许这份
 以后双击 **Start.command** 或 **Discord Archive.app**。默认端口 8765，被占用时自动换用空闲端口，以启动提示为准。
 
 按需配置：[语音转写](USAGE.md#语音转写可选) · [定时推送](DELIVERY.md) · [自动启动](OPERATIONS.md#自动启动可选)。只访问已有 Ubuntu 时，按 [访问教程](ACCESS.md)操作。
+
+## 下一步
+
+工作台已显示账号或“添加频道与答疑人”后，点击 **[下一步：首次采集出图](USAGE.md#第一次采集出图)**。

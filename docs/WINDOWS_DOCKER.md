@@ -1,5 +1,7 @@
 # Windows Docker 本地完整版（预览）
 
+流程：**安装与私网访问 → [连接 Discord](LOGIN_ASSISTANT.md#首次连接-discord) → [首次出图](USAGE.md#第一次采集出图)**。
+
 在 Windows 上运行同一个 Linux 镜像，采集、small 语音转写和出图均在本机容器完成。它与“Windows 访问 Ubuntu 客户端”是两种用途。
 
 **当前为预览包，没有 Windows Docker Desktop 实机验收。** 脚本会检查本机访问和管理权限，失败就停止；Linux 容器测试不能替代 Windows 实测。Mac 继续使用原生安装。
@@ -70,6 +72,9 @@ Set-Location D:\DiscordArchive
 
 Tailscale 在 Windows 运行，容器不管理 Windows 网络或电源。日常浏览器代理有冲突时，用 [访问客户端](ACCESS.md)的专用窗口。不开放公网或启用 Funnel。
 
+<details>
+<summary>安装后的管理、配置与排错</summary>
+
 ## 5. 日常使用
 
 | 操作 | 入口 |
@@ -104,3 +109,11 @@ Tailscale 在 Windows 运行，容器不管理 Windows 网络或电源。日常�
 | 目录不能写入 | 确认目录存在、Docker Desktop 能访问，并检查另存错误；不要把整个系统盘挂进容器 |
 
 Windows 的 host 网络、NTFS 挂载、扫码扩展和 Tailscale Serve 仍需实机验收；不能因脚本检查通过就宣称全部硬件环境可用。
+
+</details>
+
+## 下一步
+
+确认 HTTPS 工作台能打开后，点击 **[下一步：连接 Discord](LOGIN_ASSISTANT.md#首次连接-discord)**，在自己的 Mac 或 Windows 访问电脑操作。
+
+工作台已经显示已连接账号时，直接进入 **[首次采集出图](USAGE.md#第一次采集出图)**，不用重新绑定。

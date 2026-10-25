@@ -1,5 +1,7 @@
 # Ubuntu Docker 安装与使用
 
+流程：**安装与私网访问 → [连接 Discord](LOGIN_ASSISTANT.md#首次连接-discord) → [首次出图](USAGE.md#第一次采集出图)**。
+
 适用于 Ubuntu x86_64（amd64）。镜像包含运行环境、浏览器、FFmpeg、中文字体和 small 模型，使用与 Mac 相同的工作台。Mac 继续[原生安装](MAC.md)。
 
 ## 1. 准备服务器与文件
@@ -63,6 +65,9 @@ Tailscale 在宿主机运行，容器无管理权限。工作台仅允许配置�
 
 目录挂载、端口、变量、资源限制与备份见 [Docker 配置指南](DOCKER_CONFIG.md)。Windows Docker Desktop 另见 [预览教程](WINDOWS_DOCKER.md)。
 
+<details>
+<summary>安装后的管理、配置与排错</summary>
+
 ## 日常管理与资料保存
 
 在部署目录执行：
@@ -86,3 +91,11 @@ Tailscale 在宿主机运行，容器无管理权限。工作台仅允许配置�
 ## 验收范围
 
 [Docker 实测记录](DOCKER_ACCEPTANCE.md)覆盖 Linux amd64 / CPU。NVIDIA、AMD GPU 需另行准备驱动、运行时与镜像，尚未实测；适配方向见 [Linux GPU 说明](LINUX.md#3-语音转写默认-small--cpu)。
+
+</details>
+
+## 下一步
+
+确认 HTTPS 工作台能打开后，点击 **[下一步：连接 Discord](LOGIN_ASSISTANT.md#首次连接-discord)**，在自己的 Mac 或 Windows 访问电脑操作。
+
+工作台已经显示已连接账号时，直接进入 **[首次采集出图](USAGE.md#第一次采集出图)**，不用重新绑定。

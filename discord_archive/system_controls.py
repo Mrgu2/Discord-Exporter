@@ -10,6 +10,7 @@ import subprocess
 import sys
 import threading
 from datetime import datetime, timezone
+from . import container_runtime
 
 
 def run(command):
@@ -43,6 +44,12 @@ class StartupControl:
         return False
 
     def status(self):
+        if container_runtime.active():
+            try:
+                enabled=container_runtime.preference(self.root)['autostart']
+                return {'available':True,'enabled':enabled,'scope':'container','note':'控制应用是否随容器启动；关闭不会停止当前服务。Docker 后台由宿主机管理。'}
+            except (OSError,ValueError):
+                return {'available':False,'enabled':False,'scope':'container','note':'无法读取容器启动偏好，原文件已保留。'}
         result={'available':sys.platform=='darwin' or sys.platform.startswith('linux'),
             'enabled':False,'scope':'login','note':''}
         try:
@@ -78,6 +85,9 @@ class StartupControl:
     def _set_enabled(self,enabled):
         if type(enabled) is not bool: raise ValueError('自动启动开关必须为布尔值')
         if not self.status()['available']: raise ValueError(self.status()['note'])
+        if container_runtime.active():
+            container_runtime.set_autostart(self.root,enabled)
+            return self.status()
         path=self._file()
         if not self._owned(path): raise ValueError('同名服务属于另一份项目')
         if not path.exists() and not enabled: return self.status()
@@ -131,6 +141,8 @@ class HostPower:
             'org.freedesktop.login1.Manager',method,*args]
 
     def status(self):
+        if container_runtime.active():
+            return {'supported':False,'reboot':False,'poweroff':False,'note':'容器仅控制本应用，不提供宿主机关机或重启。'}
         result={'supported':sys.platform.startswith('linux'),'reboot':False,'poweroff':False,'note':''}
         if not result['supported']: return result
         try:

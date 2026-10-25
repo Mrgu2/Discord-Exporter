@@ -2,13 +2,18 @@
 import errno
 import hashlib
 import json
+import os
 from pathlib import Path
 
 from .settings import atomic_json
 
 
 def project_id(root):
-    return hashlib.sha256(str(Path(root).resolve()).encode()).hexdigest()
+    identity = str(Path(root).resolve())
+    if os.environ.get('DISCORD_ARCHIVE_DOCKER') == '1':
+        path = Path(root)/'data/docker-identity.json'
+        if path.exists(): identity += ':'+json.loads(path.read_text())['id']
+    return hashlib.sha256(identity.encode()).hexdigest()
 
 
 def read_listener(root):

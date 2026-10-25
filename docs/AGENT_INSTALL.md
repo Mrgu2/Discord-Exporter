@@ -27,7 +27,13 @@ python3 scripts/desktop_launcher.py --root "$PWD" --check
 
 语音在需要时单独执行 `bash Install-Speech.command`；Intel Mac 的当前语音入口不支持，不能标记通过。不要删除旧模型或已有虚拟环境。
 
-## Ubuntu 首次部署
+## Ubuntu Docker 首次部署（推荐）
+
+按 [Docker 教程](DOCKER.md)核对 Linux amd64、Docker Engine、Compose v2、磁盘空间和现有服务。取得部署 ZIP 与离线镜像，在新部署目录执行 `sudo bash Install-Docker.sh`，再执行 `sudo bash Configure-Tailscale.sh`；已有 Serve 路由先核对，不能覆盖其他工作台。模型在镜像内，无需在访问电脑装模型。
+
+隔离验收要设置不同 `COMPOSE_PROJECT_NAME` 和 `ARCHIVE_PORT`，不得挂载原 data/output 卷。复用凭证必须得到用户授权，私密数据仅传入新卷。检查实际出图、语音进入稿件、容器重启后资料仍在，以及停止/自动启动设置生效。不得挂载 Docker socket 或电源接口；Docker 版只能控制容器内应用，不控制 Ubuntu 关机/重启。
+
+## Ubuntu 原生首次部署（替代方案）
 
 严格区分访问电脑与服务器终端。按 [Ubuntu 教程](LINUX_SETUP.md)先 SCP 上传并用 ls 检查，再在项目目录执行：
 

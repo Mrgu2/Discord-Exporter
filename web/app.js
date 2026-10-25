@@ -406,8 +406,8 @@
       document.querySelector('label[for="export-copy-directory"]').textContent = '自动另存目录（Linux 服务器）';
       $('export-directory-choose').textContent = '填写服务器目录';
       $('export-copy-directory').placeholder = '/home/用户名/图片目录';
-      document.querySelector('#credentials-section .form-help').textContent = '通过 SSH 隧道连接服务器后配置，页面不显示已保存的值。';
-      document.querySelector('#service-more .form-help').textContent = '停止后访问会断开。在服务器执行 systemctl --user start discordarchive 可重新启动，数据保留。';
+      document.querySelector('#credentials-section .form-help').textContent = '通过获准的 Tailscale HTTPS 或 SSH 隧道配置，页面不显示已保存的值。';
+      document.querySelector('#service-more .form-help').textContent = data.system?.startup?.scope === 'container' ? '停止后运行部署目录的 Start-Docker.sh 恢复应用，数据保留。' : '停止后访问会断开。在服务器执行 systemctl --user start discordarchive 可重新启动，数据保留。';
     }
     const config = data.config || publicConfig;
     hydrateConfig(config);
@@ -857,7 +857,7 @@
     const startup=data.system?.startup;
     $('startup-controls').hidden=!isLocal || !startup;
     if (startup) {
-      text('startup-label', data.platform?.system === 'linux' && startup.scope === 'boot' ? '开机后自动运行' : '登录后自动运行');
+      text('startup-label', data.platform?.system === 'linux' && startup.scope === 'container' ? '容器启动后自动运行' : data.platform?.system === 'linux' && startup.scope === 'boot' ? '开机后自动运行' : '登录后自动运行');
       if (!startupRequest) $('startup-enabled').checked=Boolean(startup.enabled);
       $('startup-enabled').disabled=startupRequest || !startup.available || Boolean(serviceAction);
       text('startup-note',startupRequest ? '正在保存系统启动设置…' : startup.note || '关闭开关不会停止当前服务。');
@@ -903,7 +903,7 @@
     if (['restart', 'stop'].includes(action)) {
       if (settingsDirty) { showToast('请先保存设置，再操作服务。', true); return; }
       if (!window.confirm(action === 'stop'
-        ? (snapshot?.platform?.system === 'linux' ? '停止本应用后网页将断开。可在服务器执行 systemctl --user start discordarchive.service 恢复；自动启动偏好保留。等待已有任务结束后停止？' : '停止服务后，网页和手机访问将断开，登录服务的自动拉起也会暂停。再次打开 Mac App 或 Start.command 可恢复。等待已有任务结束后停止？')
+        ? (snapshot?.platform?.system === 'linux' ? (snapshot?.system?.startup?.scope === 'container' ? '停止本应用后网页将断开。运行部署目录的 Start-Docker.sh 恢复；自动启动偏好保留。等待已有任务结束后停止？' : '停止本应用后网页将断开。可在服务器执行 systemctl --user start discordarchive.service 恢复；自动启动偏好保留。等待已有任务结束后停止？') : '停止服务后，网页和手机访问将断开，登录服务的自动拉起也会暂停。再次打开 Mac App 或 Start.command 可恢复。等待已有任务结束后停止？')
         : '等待已有任务结束后重启服务？页面会自动重新连接。')) return;
     }
     serviceRequest = true;

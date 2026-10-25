@@ -31,7 +31,7 @@ App 使用本地临时签名，没有 Developer ID 公证；另一台 Mac 可能
 
 ## 修正版交付目录与文件位置
 
-GitHub 发布版见 [Releases](https://github.com/Mrgu2/Discord-Exporter/releases/tag/v2026.10.25.1)。当前维护者构建目录为 `dist/releases/v2026.10.25.1/`；接收方直接下载 Release 中的三个 ZIP，按平台选用。获取方式与客户端架构见 [获取安装包](DOWNLOADS.md)。
+GitHub 发布版见 [Releases](https://github.com/Mrgu2/Discord-Exporter/releases/tag/v2026.10.25.2)。当前维护者构建目录为 `dist/releases/v2026.10.25.2/`；接收方按使用场景选择文件；Ubuntu Docker 另需离线镜像，见下方说明。获取方式与客户端架构见 [获取安装包](DOWNLOADS.md)。
 
 当前修正版及验收边界见 [当前修正版验收](FINAL_PACKAGE_ACCEPTANCE.md)，不同使用方式拿哪些 ZIP 见 [README 文件选择](../README.md#需要拿哪些文件)。
 
@@ -64,3 +64,11 @@ PATH="$PWD/.runtime/bin:$PATH" python3 scripts/package_app.py
 新版本生成在 `dist/` 下的新版本目录，不会覆盖旧包。独立助手的构建与校验见 [助手说明](LOGIN_ASSISTANT.md)。分发包不含 `data/`、`output/`、登录浏览器资料、凭证、聊天、模型或本机依赖。接收完整项目的新部署需要安装依赖、连接自己的账号并添加频道；只访问已有 Ubuntu 的人不重装项目、不重复授权。迁移自己的历史数据请另看[迁移说明](REFERENCE.md#换到另一台-mac)。
 
 只使用本人已有的频道访问权限。普通成员账号自动读取存在 Discord 账号处罚风险；此工具不负责自动发布，也不向外部模型发送群聊。
+
+## Linux Docker 分发
+
+Docker 版单独交付 `DiscordArchive-Docker-linux-amd64.zip` 与 `discordarchive-linux-amd64.tar.gz`。前者是脚本和教程，后者是带 Chromium、FFmpeg、中文字体与 small 模型的离线镜像；这是上述“源码包不含模型”的例外。镜像只从白名单公共源文件、已校验客户端与公共模型构建，不包含任何命名卷、账号或聊天。
+
+维护者先用 `scripts/package_docker.py` 生成干净构建上下文，再在 Linux amd64 上执行 `docker build -f docker/Dockerfile -t discordarchive-linux:版本号 构建目录`，实际验收后 `docker save` 导出并压缩。不要使用 `docker commit` 将登录后的容器变成镜像，不要打包 data/output 卷。保持 Compose 默认镜像版本与分发镜像一致。
+
+安装与功能边界见 [Docker 教程](DOCKER.md)，当前验证结果见 [Docker 验收记录](DOCKER_ACCEPTANCE.md)。

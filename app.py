@@ -29,6 +29,7 @@ from discord_archive.store import ArchiveStore
 from discord_archive.worker import Worker
 from discord_archive.service_control import ServiceControl
 from discord_archive.access import linux_access, tailscale_ipv4
+from discord_archive.listener import project_id
 from discord_archive.system_controls import StartupControl, HostPower
 from discord_archive.connection_binding import bind_connection
 from discord_archive.phone_sessions import PhoneSessions
@@ -151,7 +152,7 @@ class Application:
         return {
             'platform': {'system': sys.platform, 'login_desktop': bool(os.environ.get('DISCORD_ARCHIVE_LOGIN_DESKTOP')) if local else False},
             'system': self._cached_status_value('system_controls',30,
-                lambda:{'hostname':self.local_hostname,'binding_root':str(self.root.resolve()),'project_id':hashlib.sha256(str(self.root.resolve()).encode()).hexdigest(),
+                lambda:{'hostname':self.local_hostname,'binding_root':str(self.root.resolve()),'project_id':project_id(self.root),
                     'startup':self.startup.status(),'power':self.service.power.status()})
                 if local and hasattr(self,'startup') else {},
             'archive_key': self.csrf, 'service': self.service.status(), 'config': self.settings.read(), 'state': state, 'connectivity': connectivity,
@@ -288,7 +289,7 @@ def make_handler(application):
                         if member.filename!='server.json':archive.writestr(member,original.read(member.filename))
                     target={'server_url':app.remote_access.origin}
                     if self.local() and sys.platform=='darwin':
-                        target={'server_url':f'http://127.0.0.1:{app.port}','project_id':hashlib.sha256(str(app.root).encode()).hexdigest()}
+                        target={'server_url':f'http://127.0.0.1:{app.port}','project_id':project_id(app.root)}
                     archive.writestr('server.json',json.dumps(target))
                 return self.send(200,output.getvalue(),'application/zip',{'Content-Disposition':'attachment; filename="'+source.name+'"'})
             if not self.authorized():
@@ -390,7 +391,7 @@ def make_handler(application):
                 if path == '/api/bind-discord' and self.command == 'POST':
                     if not self.administrator():
                         return self.send(403,{'error':'绑定连接仅允许本机或 SSH 隧道操作'})
-                    if sys.platform=='darwin' and data.get('expected_project_id')!=hashlib.sha256(str(app.root).encode()).hexdigest():
+                    if sys.platform=='darwin' and data.get('expected_project_id')!=project_id(app.root):
                         raise ValueError('本机资料库已变化，请从当前工作台重新下载首次连接包')
                     result=bind_connection(app.credentials,app.worker,data.get('credential'),data.get('expected_user_id'))
                     app.invalidate_status_cache()
@@ -536,7 +537,7 @@ def main():
         server = bind_server(ThreadingHTTPServer, app.root, args.host, args.port, make_handler(app))
         app.port = server.server_address[1]
         app.listener_warning = None
-        if sys.platform.startswith('linux') and args.host == '127.0.0.1' and app.remote_access.origin:
+        if sys.platform.startswith('linux') and args.host == '127.0.0.1' and app.remote_access.origin and os.environ.get('DISCORD_ARCHIVE_DOCKER') != '1':
             old_backend = previous_listener.get('url', f'http://127.0.0.1:{args.port}')
             app.listener_warning = sync_private_proxy(app.remote_access.origin,
                 f'http://127.0.0.1:{app.port}', old_backend)

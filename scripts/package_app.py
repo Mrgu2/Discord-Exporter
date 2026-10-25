@@ -24,7 +24,7 @@ SOURCE_ALLOWLIST = (
     "Install.command", "Start.command", "Install-Speech.command",
     "scripts/install_mac.sh", "scripts/install_speech.py", "scripts/doctor.py",
     "scripts/browser_runtime.mjs", "scripts/check_browser.mjs", "scripts/verify_distribution.py",
-    "discord_archive/__init__.py", "discord_archive/listener.py", "discord_archive/assets.py", "discord_archive/access.py", "discord_archive/system_controls.py", "discord_archive/connection_binding.py", "discord_archive/remote_access.py",
+    "discord_archive/__init__.py", "discord_archive/container_runtime.py", "discord_archive/listener.py", "discord_archive/assets.py", "discord_archive/access.py", "discord_archive/system_controls.py", "discord_archive/connection_binding.py", "discord_archive/remote_access.py",
     "discord_archive/browser_login.py", "discord_archive/collector.py",
     "discord_archive/context.py", "discord_archive/editorial.py",
     "discord_archive/export_names.py", "discord_archive/export_copy.py",
@@ -45,6 +45,7 @@ SOURCE_ALLOWLIST = (
     "docs/REFERENCE.md", "docs/INSTALLATION_ACCEPTANCE.md",
 )
 OPTIONAL_SOURCE_ALLOWLIST = (
+    "docs/DOCKER.md", "docs/DOCKER_ACCEPTANCE.md", ".dockerignore", "docker/Dockerfile", "docker/compose.yaml", "docker/supervisor.py", "docker/manage.py", "docker/initialize.py", "docker/configure_tailscale.py", "docker/restart.py", "docker/Install-Docker.sh", "docker/Start-Docker.sh", "docker/Stop-Docker.sh", "docker/Configure-Tailscale.sh", "scripts/package_docker.py", "scripts/package_docker_release.py", "tests/test_container_runtime.py",
     "docs/DOWNLOADS.md", "docs/AGENT_INSTALL.md", "tests/first_output_check.mjs",
     "docs/images/workspace.png", "docs/images/export-example.png",
     "docs/DELIVERY.md", "docs/RECOVERY_PORTS_ACCEPTANCE.md", "tests/test_clawbot.py", "tests/clawbot_check.mjs", "tests/test_delivery.py", "tests/test_listener.py", "tests/delivery_check.mjs",

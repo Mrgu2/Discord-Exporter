@@ -1,0 +1,29 @@
+name: discordarchive
+services:
+  app:
+    image: ${ARCHIVE_IMAGE:-discordarchive-linux:v2026.10.25.2}
+    network_mode: host
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 30m
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    shm_size: 1gb
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,mode=1777
+    environment:
+      ARCHIVE_PORT: ${ARCHIVE_PORT:-8765}
+    volumes:
+      - data:/app/data
+      - output:/app/output
+      - models:/app/.runtime/models
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+volumes:
+  data:
+  output:
+  models:

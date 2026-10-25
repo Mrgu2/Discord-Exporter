@@ -6,6 +6,7 @@ import sys
 import threading
 import uuid
 from .system_controls import HostPower
+from . import container_runtime
 
 LABEL = 'local.discord.answer-archive'
 
@@ -49,6 +50,8 @@ class ServiceControl:
                 self.power.check(action)
             # Inspect ownership before accepting; failures leave the service running.
             agent = own_agent() if action == 'stop' else None
+            if action == 'stop' and container_runtime.active():
+                container_runtime.mark_stopped()
             self.worker.draining = True
             self.action, self.error = action, None
             self.agent = agent

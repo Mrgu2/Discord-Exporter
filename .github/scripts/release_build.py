@@ -98,7 +98,7 @@ try:
  speech_result=json.loads(subprocess.check_output(['docker','exec',name,'/opt/whisper/bin/python','-c',speech],text=True))
  # Actual manuscript rendering on public fixture text; no Discord content.
  import html
- fixture_html='<!doctype html>'+'<meta charset=utf-8><main id=manuscript><h1>Public fixture</h1><div class=panel-grid><section class=content-panel data-kind=qa><article class=topic><h2>Speech test</h2><section class="block answer" data-segment data-evidence-id=fixture/1><p class=message-text>'+html.escape(speech_result['text'])+'</p></section></article></section></div></main>'
+ fixture_html='<!doctype html>'+'<meta charset=utf-8><main id=manuscript><h1>Public fixture</h1><div class=panel-grid><section class=content-panel data-kind=qa><h2 class=category-title>Fixture</h2><article class=topic><h2>Speech test</h2><section class="block answer" data-segment data-evidence-id=fixture/1><p class=message-text>'+html.escape(speech_result['text'])+'</p></section></article></section></div></main>'
  render_input="from pathlib import Path;Path('/tmp/fixture.html').write_text("+repr(fixture_html)+")"
  run('docker','exec',name,'python','-c',render_input)
  render=json.loads(subprocess.check_output(['docker','exec',name,'node','scripts/render.mjs','/tmp/fixture.html','/app/output/fixture','1'],text=True));assert render['images'] and render['source_coverage']['missing']==0
